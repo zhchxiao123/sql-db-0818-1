@@ -150,11 +150,19 @@ class SqlParseError(Exception):
 
 
 class _Parser:
-    def __init__(self, tokens: List[Token]):
+    def __init__(self, tokens: List[Token], sql: str = ""):
         self.tokens = tokens
         self.pos = 0
+        self.sql = sql  # 原始 SQL(用于 CHECK 错误文本的原文切片)
 
     # ------------------------------------------------------------ token 工具
+    def _raw_text(self, tok: Optional[Token], end_pos: Optional[int] = None) -> str:
+        """取 token 的原始文本(保留大小写与空格)。end_pos 缺省取 token 结束。"""
+        if tok is None:
+            return ""
+        end = end_pos if end_pos is not None else tok.pos + len(tok.text)
+        return self.sql[tok.pos:end]
+
     def peek(self) -> Optional[Token]:
         if self.pos < len(self.tokens):
             return self.tokens[self.pos]
@@ -224,42 +232,192 @@ class _Parser:
                 return self._parse_update()
             if kw == "DELETE":
                 return self._parse_delete()
+            if kw == "DROP":
+                self.pos += 1
+                self.expect_kw("INDEX")
+                return self._parse_drop_index()
             raise SqlParseError(f'near "{kw}": syntax error')
         raise SqlParseError(f'near "{tok.text}": syntax error')
 
-    # ------------------------------------------------------------ CREATE TABLE
-    def _parse_create(self) -> ast.CreateTable:
+    # ------------------------------------------------------------ CREATE
+    def _parse_create(self) -> ast.Statement:
         self.expect_kw("CREATE")
-        self.expect_kw("TABLE")
-        table = self._expect_ident()
+        if self.accept_kw("TABLE"):
+            return self._parse_create_table()
+        if self.accept_kw("INDEX"):
+            return self._parse_create_index(unique=False)
+        if self.accept_kw("UNIQUE"):
+            self.expect_kw("INDEX")
+            return self._parse_create_index(unique=True)
+        raise self._syntax()
+
+    def _parse_create_table(self) -> ast.CreateTable:
+        table_tok = self.next()
+        if table_tok.kind != "ident":
+            raise self._syntax()
+        table = table_tok.text
+        orig_table = self._raw_text(table_tok)
         self.expect_sym("(")
         columns: List[ast.ColumnDef] = []
+        constraints: List[ast.TableConstraint] = []
         while True:
-            name = self._expect_ident()
-            type_name = self._parse_type_name()
+            # 表级约束(以关键字开头)
+            if self.is_kw("PRIMARY") or self.is_kw("UNIQUE") or self.is_kw("CHECK"):
+                constraints.append(self._parse_table_constraint())
+            else:
+                columns.append(self._parse_column_def())
+            if self.accept_sym(","):
+                continue
+            break
+        self.expect_sym(")")
+        return ast.CreateTable(
+            table=table, orig_name=orig_table, columns=columns, constraints=constraints
+        )
+
+    def _parse_column_def(self) -> ast.ColumnDef:
+        name_tok = self.next()
+        if name_tok.kind != "ident":
+            raise self._syntax()
+        name = name_tok.text
+        orig_name = self._raw_text(name_tok)
+        type_name = self._parse_type_name()
+        collation = "BINARY"
+        default: Optional[ast.Value] = None
+        not_null = False
+        primary_key = False
+        unique = False
+        check: Optional[Tuple[ast.Expr, str]] = None
+        while True:
+            if self.accept_kw("COLLATE"):
+                collation = self._expect_ident()
+            elif self.accept_kw("DEFAULT"):
+                default = self._parse_default_literal()
+            elif self.accept_kw("NOT"):
+                self.expect_kw("NULL")
+                not_null = True
+            elif self.accept_kw("PRIMARY"):
+                self.expect_kw("KEY")
+                primary_key = True
+                self.accept_kw("AUTOINCREMENT")  # 接受但忽略(rowid 语义外)
+            elif self.accept_kw("UNIQUE"):
+                unique = True
+            elif self.is_kw("CHECK"):
+                check = self._parse_check()
+            else:
+                break
+        return ast.ColumnDef(
+            name=name,
+            orig_name=orig_name,
+            type_name=type_name,
+            affinity=affinity_of_type(type_name),
+            collation=collation,
+            default=default,
+            not_null=not_null,
+            primary_key=primary_key,
+            unique=unique,
+            check=check,
+        )
+
+    def _parse_table_constraint(self) -> ast.TableConstraint:
+        if self.accept_kw("PRIMARY"):
+            self.expect_kw("KEY")
+            cols, orig_cols = self._parse_constraint_columns()
+            return ast.TableConstraint(
+                kind="PRIMARY KEY", columns=cols, orig_columns=orig_cols
+            )
+        if self.accept_kw("UNIQUE"):
+            cols, orig_cols = self._parse_constraint_columns()
+            return ast.TableConstraint(
+                kind="UNIQUE", columns=cols, orig_columns=orig_cols
+            )
+        if self.is_kw("CHECK"):
+            expr, raw = self._parse_check()
+            return ast.TableConstraint(kind="CHECK", check_expr=expr, check_raw=raw)
+        raise self._syntax()
+
+    def _parse_constraint_columns(self) -> Tuple[List[str], List[str]]:
+        self.expect_sym("(")
+        cols: List[str] = []
+        orig_cols: List[str] = []
+        while True:
+            tok = self.next()
+            if tok.kind != "ident":
+                raise self._syntax()
+            cols.append(tok.text)
+            orig_cols.append(self._raw_text(tok))
+            if self.accept_sym(","):
+                continue
+            break
+        self.expect_sym(")")
+        return cols, orig_cols
+
+    def _parse_check(self) -> Tuple[ast.Expr, str]:
+        """CHECK (expr) → (AST, 原始文本)。原文用于错误消息(CHECK constraint failed: ...)。"""
+        self.expect_kw("CHECK")
+        start_tok = self.peek()
+        self.expect_sym("(")
+        expr = self._parse_expr()
+        close_tok = self.peek()
+        self.expect_sym(")")
+        if start_tok is not None and close_tok is not None:
+            raw = self.sql[start_tok.pos + 1 : close_tok.pos].strip()
+        else:
+            raw = ""
+        return expr, raw
+
+    def _parse_create_index(self, unique: bool) -> ast.CreateIndex:
+        name_tok = self.next()
+        if name_tok.kind != "ident":
+            raise self._syntax()
+        index_name = name_tok.text
+        orig_index_name = self._raw_text(name_tok)
+        self.expect_kw("ON")
+        table = self._expect_ident()
+        self.expect_sym("(")
+        columns: List[ast.IndexColumn] = []
+        while True:
+            tok = self.next()
+            if tok.kind != "ident":
+                raise self._syntax()
+            col_name = tok.text
+            orig_col = self._raw_text(tok)
             collation = "BINARY"
             if self.accept_kw("COLLATE"):
                 collation = self._expect_ident()
-            default: Optional[ast.Value] = None
-            if self.accept_kw("DEFAULT"):
-                default = self._parse_default_literal()
             columns.append(
-                ast.ColumnDef(
-                    name=name,
-                    type_name=type_name,
-                    affinity=affinity_of_type(type_name),
-                    collation=collation,
-                    default=default,
-                )
+                ast.IndexColumn(name=col_name, orig_name=orig_col, collation=collation)
             )
             if self.accept_sym(","):
                 continue
             break
         self.expect_sym(")")
-        return ast.CreateTable(table=table, columns=columns)
+        return ast.CreateIndex(
+            name=index_name,
+            orig_name=orig_index_name,
+            table=table,
+            columns=columns,
+            unique=unique,
+        )
+
+    def _parse_drop_index(self) -> ast.DropIndex:
+        name_tok = self.next()
+        if name_tok.kind != "ident":
+            raise self._syntax()
+        return ast.DropIndex(name=name_tok.text)
 
     def _parse_default_literal(self) -> Optional[ast.Value]:
-        """列 DEFAULT 子句的字面量值(SQLite 只允许字面量,表达式是语法错误)。"""
+        """列 DEFAULT 子句:字面量或括号常量表达式(SQLite 两者皆可)。
+
+        如 DEFAULT 42 / DEFAULT 'x' / DEFAULT NULL / DEFAULT (1+2)。
+        """
+        if self.is_sym("("):
+            self.pos += 1
+            expr = self._parse_expr()
+            self.expect_sym(")")
+            try:
+                return _const_eval(expr)
+            except SqlParseError:
+                raise SqlParseError("DEFAULT expression must be constant")
         tok = self.peek()
         if tok is None:
             raise SqlParseError("DEFAULT requires a literal value")
@@ -797,7 +955,7 @@ def parse(sql: str) -> ast.Statement:
         tokens = tokens[:-1]
     if not tokens:
         raise SqlParseError("empty statement")
-    parser = _Parser(tokens)
+    parser = _Parser(tokens, sql)
     stmt = parser.parse_statement()
     if not parser.at_end():
         tok = parser.peek()

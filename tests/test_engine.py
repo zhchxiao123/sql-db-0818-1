@@ -701,5 +701,214 @@ class SelectAdvancedTest(unittest.TestCase):
         self.assertEqual(r.rows, [["a"], ["b"]])
 
 
+class IndexTest(unittest.TestCase):
+    def test_create_index_normal(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b TEXT)"))
+        execute(db, parse("CREATE INDEX idx ON t(a)"))
+        execute(db, parse("CREATE INDEX idx2 ON t(a, b)"))
+        execute(db, parse("CREATE INDEX idx3 ON t(b COLLATE NOCASE)"))
+
+    def test_create_index_duplicate_name_error(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("CREATE INDEX idx ON t(a)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("CREATE INDEX idx ON t(a)"))
+
+    def test_create_index_unknown_column_error(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("CREATE INDEX idx ON t(z)"))
+
+    def test_create_index_unknown_table_error(self):
+        db = Database()
+        with self.assertRaises(SqlError):
+            execute(db, parse("CREATE INDEX idx ON nosuch(a)"))
+
+    def test_index_does_not_change_results(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(3),(1),(2)"))
+        before = execute(db, parse("SELECT a FROM t ORDER BY a")).rows
+        execute(db, parse("CREATE INDEX idx ON t(a)"))
+        after = execute(db, parse("SELECT a FROM t ORDER BY a")).rows
+        self.assertEqual(before, after)
+
+    def test_unique_index_enforces(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("CREATE UNIQUE INDEX uidx ON t(a)"))
+        execute(db, parse("INSERT INTO t VALUES(1)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES(1)"))
+
+    def test_unique_index_create_on_dup_data_fails(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(1)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("CREATE UNIQUE INDEX uidx ON t(a)"))
+
+    def test_unique_index_multiple_null_ok(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("CREATE UNIQUE INDEX uidx ON t(a)"))
+        execute(db, parse("INSERT INTO t VALUES(NULL),(NULL)"))
+
+    def test_unique_index_collate(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a TEXT)"))
+        execute(db, parse("CREATE UNIQUE INDEX uidx ON t(a COLLATE NOCASE)"))
+        execute(db, parse("INSERT INTO t VALUES('abc')"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES('ABC')"))
+
+    def test_unique_index_multi_column(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b INTEGER)"))
+        execute(db, parse("CREATE UNIQUE INDEX uidx ON t(a, b)"))
+        execute(db, parse("INSERT INTO t VALUES(1,1),(1,2)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES(1,1)"))
+        execute(db, parse("INSERT INTO t VALUES(1,3)"))
+
+    def test_drop_index(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("CREATE INDEX idx ON t(a)"))
+        execute(db, parse("DROP INDEX idx"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("DROP INDEX idx"))
+
+    def test_drop_index_unknown_error(self):
+        db = Database()
+        with self.assertRaises(SqlError):
+            execute(db, parse("DROP INDEX nosuch"))
+
+
+class ConstraintTest(unittest.TestCase):
+    def test_unique_column(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER UNIQUE)"))
+        execute(db, parse("INSERT INTO t VALUES(1)"))
+        with self.assertRaises(SqlError) as cm:
+            execute(db, parse("INSERT INTO t VALUES(1)"))
+        self.assertIn("UNIQUE constraint failed", str(cm.exception))
+
+    def test_unique_multiple_null_ok(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER UNIQUE)"))
+        execute(db, parse("INSERT INTO t VALUES(NULL),(NULL),(1)"))
+
+    def test_unique_table_level_multi_column(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b INTEGER, UNIQUE(a, b))"))
+        execute(db, parse("INSERT INTO t VALUES(1,1)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES(1,1)"))
+        execute(db, parse("INSERT INTO t VALUES(1,2)"))
+
+    def test_primary_key_column(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER PRIMARY KEY, b TEXT)"))
+        execute(db, parse("INSERT INTO t VALUES(1,'x')"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES(1,'y')"))
+
+    def test_primary_key_null_auto_assign(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER PRIMARY KEY)"))
+        execute(db, parse("INSERT INTO t VALUES(NULL)"))
+        execute(db, parse("INSERT INTO t VALUES(NULL)"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[1], [2]])
+
+    def test_text_primary_key_multiple_null_ok(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a TEXT PRIMARY KEY)"))
+        execute(db, parse("INSERT INTO t VALUES(NULL),(NULL)"))
+
+    def test_primary_key_table_level(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b TEXT, PRIMARY KEY(a, b))"))
+        execute(db, parse("INSERT INTO t VALUES(1,'x')"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES(1,'x')"))
+        execute(db, parse("INSERT INTO t VALUES(1,'y')"))
+
+    def test_not_null(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER NOT NULL)"))
+        execute(db, parse("INSERT INTO t VALUES(1)"))
+        with self.assertRaises(SqlError) as cm:
+            execute(db, parse("INSERT INTO t VALUES(NULL)"))
+        self.assertIn("NOT NULL constraint failed", str(cm.exception))
+
+    def test_not_null_default_interplay(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER NOT NULL DEFAULT 5)"))
+        execute(db, parse("INSERT INTO t DEFAULT VALUES"))
+        r = execute(db, parse("SELECT a FROM t"))
+        self.assertEqual(r.rows, [[5]])
+
+    def test_check_column_level(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER CHECK(a > 0))"))
+        execute(db, parse("INSERT INTO t VALUES(1)"))
+        with self.assertRaises(SqlError) as cm:
+            execute(db, parse("INSERT INTO t VALUES(0)"))
+        self.assertIn("CHECK constraint failed", str(cm.exception))
+
+    def test_check_null_passes(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER CHECK(a > 0))"))
+        execute(db, parse("INSERT INTO t VALUES(NULL)"))
+
+    def test_check_table_level(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, CHECK(a >= 0 AND a < 10))"))
+        execute(db, parse("INSERT INTO t VALUES(5)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES(10)"))
+
+    def test_check_update_violation(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, CHECK(a > 0))"))
+        execute(db, parse("INSERT INTO t VALUES(1)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("UPDATE t SET a = -5"))
+
+    def test_check_references_other_column(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b INTEGER CHECK(b < a))"))
+        execute(db, parse("INSERT INTO t VALUES(5, 3)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("INSERT INTO t VALUES(2, 9)"))
+
+    def test_default_expression(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER DEFAULT (1+2))"))
+        execute(db, parse("INSERT INTO t DEFAULT VALUES"))
+        r = execute(db, parse("SELECT a, typeof(a) FROM t"))
+        self.assertEqual(r.rows, [[3, "integer"]])
+
+    def test_update_to_own_value_ok(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER UNIQUE)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2)"))
+        execute(db, parse("UPDATE t SET a = 2 WHERE a = 2"))
+
+    def test_swap_update_fails_like_sqlite(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER UNIQUE)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("UPDATE t SET a = CASE a WHEN 1 THEN 2 WHEN 2 THEN 1 END"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[1], [2]])
+
+
 if __name__ == "__main__":
     unittest.main()

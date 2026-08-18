@@ -1,0 +1,113 @@
+statement ok
+CREATE TABLE t1(a INTEGER NOT NULL)
+
+statement ok
+INSERT INTO t1 VALUES(1)
+
+statement error NOT NULL constraint failed
+INSERT INTO t1 VALUES(NULL)
+
+statement ok
+CREATE TABLE t2(a INTEGER NOT NULL DEFAULT 5)
+
+statement ok
+INSERT INTO t2 DEFAULT VALUES
+
+query I
+SELECT a FROM t2
+----
+5
+
+statement ok
+CREATE TABLE t3(a INTEGER CHECK(a > 0))
+
+statement ok
+INSERT INTO t3 VALUES(1)
+
+statement error CHECK constraint failed
+INSERT INTO t3 VALUES(0)
+
+statement ok
+INSERT INTO t3 VALUES(NULL)
+
+query I
+SELECT a FROM t3 ORDER BY a
+----
+NULL
+1
+
+statement ok
+CREATE TABLE t4(a INTEGER, CHECK(a >= 0 AND a < 10))
+
+statement ok
+INSERT INTO t4 VALUES(5)
+
+statement error CHECK constraint failed
+INSERT INTO t4 VALUES(10)
+
+statement ok
+CREATE TABLE t5(a INTEGER, b INTEGER CHECK(b < a))
+
+statement ok
+INSERT INTO t5 VALUES(5, 3)
+
+statement error CHECK constraint failed
+INSERT INTO t5 VALUES(2, 9)
+
+statement ok
+CREATE TABLE t6(a INTEGER CHECK(a > 0))
+
+statement ok
+INSERT INTO t6 VALUES(1)
+
+statement error CHECK constraint failed
+UPDATE t6 SET a = -5
+
+statement ok
+CREATE TABLE t7(a INTEGER DEFAULT (1+2))
+
+statement ok
+INSERT INTO t7 DEFAULT VALUES
+
+query IT
+SELECT a, typeof(a) FROM t7
+----
+3
+integer
+
+statement ok
+CREATE TABLE t8(a INTEGER PRIMARY KEY, b TEXT UNIQUE NOT NULL)
+
+statement ok
+INSERT INTO t8 VALUES(1,'x')
+
+statement error UNIQUE constraint failed
+INSERT INTO t8 VALUES(1,'y')
+
+statement error UNIQUE constraint failed
+INSERT INTO t8 VALUES(2,'x')
+
+statement error NOT NULL constraint failed
+INSERT INTO t8 VALUES(2,NULL)
+
+query IT
+SELECT a, b FROM t8
+----
+1
+x
+
+statement ok
+CREATE TABLE t9(a INTEGER UNIQUE)
+
+statement ok
+INSERT INTO t9 VALUES(1),(2)
+
+statement error UNIQUE constraint failed
+INSERT INTO t9 VALUES(3),(1),(4)
+
+query I
+SELECT a FROM t9 ORDER BY a
+----
+1
+2
+

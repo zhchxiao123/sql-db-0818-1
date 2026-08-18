@@ -555,17 +555,47 @@ def sqlite_substr(s, y: int, z: Optional[int]):
 @dataclass
 class Column:
     name: str  # 大写归一化
-    type_name: str  # 原始类型名
+    orig_name: str = ""  # 声明时的原始大小写(用于错误文本)
+    type_name: str = ""  # 原始类型名
     affinity: str = AFF_NONE  # 由类型名推导
     collation: str = COLL_BINARY  # 列级 COLLATE,默认 BINARY
     default: Optional[Value] = None  # DEFAULT 字面量(未指定 → None)
+    not_null: bool = False  # NOT NULL 约束
+    primary_key: bool = False  # 列级 PRIMARY KEY
+    unique: bool = False  # 列级 UNIQUE
+    check_expr: Optional[Any] = None  # CHECK 表达式(AST,惰性求值)
+    check_raw: str = ""  # CHECK 原始文本(错误消息用)
+
+
+@dataclass
+class TableConstraintInfo:
+    """表级约束(PRIMARY KEY / UNIQUE / CHECK)。"""
+
+    kind: str  # 'PRIMARY KEY' | 'UNIQUE' | 'CHECK'
+    columns: List[str] = field(default_factory=list)  # 大写列名
+    orig_columns: List[str] = field(default_factory=list)  # 原始大小写
+    check_expr: Optional[Any] = None  # CHECK 表达式
+    check_raw: str = ""  # CHECK 原始文本
+
+
+@dataclass
+class Index:
+    """CREATE INDEX 记录的索引(仅元数据;查询不使用索引加速)。"""
+
+    name: str  # 大写归一化
+    table: str
+    orig_name: str = ""  # 原始大小写
+    columns: List[Column] = field(default_factory=list)
+    unique: bool = False
 
 
 @dataclass
 class Table:
     name: str
+    orig_name: str = ""  # 原始大小写(错误文本用)
     columns: List[Column] = field(default_factory=list)
     rows: List[List[Value]] = field(default_factory=list)
+    constraints: List[TableConstraintInfo] = field(default_factory=list)
 
     def column_index(self, name: str) -> int:
         for i, col in enumerate(self.columns):
@@ -576,14 +606,26 @@ class Table:
 
 @dataclass
 class Database:
-    """一个数据库实例:持有全部表。每个 sqllogictest 测试文件独立一个实例。"""
+    """一个数据库实例:持有全部表与索引。每个 sqllogictest 测试文件独立一个实例。"""
 
     tables: Dict[str, Table] = field(default_factory=dict)
+    indexes: Dict[str, Index] = field(default_factory=dict)
 
-    def create_table(self, name: str, columns: List[Column]) -> None:
+    def create_table(
+        self,
+        name: str,
+        columns: List[Column],
+        constraints: Optional[List[TableConstraintInfo]] = None,
+        orig_name: str = "",
+    ) -> None:
         if name in self.tables:
             raise SqlError(f"table {name} already exists")
-        self.tables[name] = Table(name=name, columns=columns)
+        self.tables[name] = Table(
+            name=name,
+            orig_name=orig_name or name,
+            columns=columns,
+            constraints=constraints or [],
+        )
 
     def get_table(self, name: str) -> Table:
         try:
@@ -591,7 +633,136 @@ class Database:
         except KeyError:
             raise SqlError(f"no such table: {name}") from None
 
-    def insert(self, name: str, columns: Optional[List[str]], rows: List[List[Value]]) -> None:
+    # ------------------------------------------------------------ 索引
+    def create_index(self, index: Index) -> None:
+        if index.name in self.indexes:
+            raise SqlError(f"index {index.orig_name} already exists")
+        # 表与列必须存在
+        table = self.get_table(index.table)
+        for col in index.columns:
+            table.column_index(col.name)
+        # UNIQUE 索引:已有数据不得违反唯一性(SQLite 在创建时即校验)
+        if index.unique:
+            idx_cols = [c.name for c in index.columns]
+            idx_orig = [c.orig_name or c.name for c in index.columns]
+            idx_colls = [c.collation for c in index.columns]
+            for i, row in enumerate(table.rows):
+                if self._unique_conflict(
+                    table, row, idx_cols, idx_orig, exclude_idx=i, collations=idx_colls
+                ):
+                    raise self._unique_error(table, idx_orig)
+        self.indexes[index.name] = index
+
+    def get_index(self, name: str) -> Index:
+        try:
+            return self.indexes[name]
+        except KeyError:
+            raise SqlError(f"no such index: {name}") from None
+
+    def drop_index(self, name: str) -> None:
+        if name not in self.indexes:
+            raise SqlError(f"no such index: {name}")
+        del self.indexes[name]
+
+    def indexes_for(self, table_name: str) -> List[Index]:
+        return [idx for idx in self.indexes.values() if idx.table == table_name]
+
+    # ------------------------------------------------------------ 约束检查
+    def _unique_conflict(
+        self,
+        table: Table,
+        row: List[Value],
+        col_names: List[str],
+        orig_col_names: List[str],
+        exclude_idx: Optional[int] = None,
+        collations: Optional[List[str]] = None,
+    ) -> bool:
+        """row 与表内其他行在 (col_names) 上是否唯一冲突(NULL 不参与比较)。
+
+        collations 缺省取表列的 collation;索引可显式传入索引列的 collation
+        (如 CREATE UNIQUE INDEX ... ON t(a COLLATE NOCASE))。
+        """
+        if any(row[table.column_index(c)] is None for c in col_names):
+            return False  # UNIQUE 允许任意多 NULL
+        if collations is None:
+            colls = [table.columns[table.column_index(c)].collation for c in col_names]
+        else:
+            colls = collations
+        for i, other in enumerate(table.rows):
+            if exclude_idx is not None and i == exclude_idx:
+                continue
+            if all(
+                compare_values(
+                    row[table.column_index(c)], other[table.column_index(c)], coll
+                )
+                == 0
+                for c, coll in zip(col_names, colls)
+            ):
+                return True
+        return False
+
+    def _unique_error(self, table: Table, orig_col_names: List[str]) -> SqlError:
+        tname = table.orig_name or table.name
+        cols = ", ".join(f"{tname}.{c}" for c in orig_col_names)
+        return SqlError(f"UNIQUE constraint failed: {cols}")
+
+    def check_row(
+        self,
+        table: Table,
+        row: List[Value],
+        eval_check,
+        exclude_idx: Optional[int] = None,
+    ) -> None:
+        """对一行做约束检查:NOT NULL → CHECK → UNIQUE(列级/表级/唯一索引)。
+
+        eval_check(cols, row, expr) → 值;由 executor 注入(避免循环导入)。
+        """
+        # 1. NOT NULL(列级)
+        for i, col in enumerate(table.columns):
+            if col.not_null and row[i] is None:
+                tname = table.orig_name or table.name
+                raise SqlError(
+                    f"NOT NULL constraint failed: {tname}.{col.orig_name or col.name}"
+                )
+        # 2. CHECK(列级 + 表级),NULL 通过
+        for i, col in enumerate(table.columns):
+            if col.check_expr is not None and row[i] is not None:
+                if not eval_check(table.columns, row, col.check_expr):
+                    raise SqlError(f"CHECK constraint failed: {col.check_raw}")
+        for tc in table.constraints:
+            if tc.kind == "CHECK" and tc.check_expr is not None:
+                if not eval_check(table.columns, row, tc.check_expr):
+                    raise SqlError(f"CHECK constraint failed: {tc.check_raw}")
+        # 3. UNIQUE(列级 PRIMARY KEY/UNIQUE + 表级 + 唯一索引)
+        for i, col in enumerate(table.columns):
+            if col.unique or col.primary_key:
+                if self._unique_conflict(
+                    table, row, [col.name], [col.orig_name or col.name], exclude_idx
+                ):
+                    raise self._unique_error(table, [col.orig_name or col.name])
+        for tc in table.constraints:
+            if tc.kind in ("PRIMARY KEY", "UNIQUE") and tc.columns:
+                if self._unique_conflict(
+                    table, row, tc.columns, tc.orig_columns, exclude_idx
+                ):
+                    raise self._unique_error(table, tc.orig_columns)
+        for idx in self.indexes_for(table.name):
+            if idx.unique:
+                idx_cols = [c.name for c in idx.columns]
+                idx_orig = [c.orig_name or c.name for c in idx.columns]
+                idx_colls = [c.collation for c in idx.columns]
+                if self._unique_conflict(
+                    table, row, idx_cols, idx_orig, exclude_idx, collations=idx_colls
+                ):
+                    raise self._unique_error(table, idx_orig)
+
+    def insert(
+        self,
+        name: str,
+        columns: Optional[List[str]],
+        rows: List[List[Value]],
+        eval_check=None,
+    ) -> None:
         table = self.get_table(name)
         if columns is None:
             indexes = list(range(len(table.columns)))
@@ -599,6 +770,8 @@ class Database:
             indexes = [table.column_index(c) for c in columns]
             if len(set(indexes)) != len(indexes):
                 raise SqlError("INSERT column list contains duplicate column")
+        # 先构造并校验全部行,任一行违反则整条失败(SQLite 原子语义)
+        prepared: List[List[Value]] = []
         for row in rows:
             if len(row) != len(indexes):
                 raise SqlError(
@@ -613,4 +786,13 @@ class Database:
                     col = table.columns[idx]
                     if col.default is not None:
                         coerced[idx] = apply_affinity(col.default, col.affinity)
-            table.rows.append(coerced)
+            # INTEGER PRIMARY KEY:NULL → 自动分配 max+1(SQLite rowid 语义)
+            for i, col in enumerate(table.columns):
+                if col.primary_key and col.affinity == AFF_INTEGER and coerced[i] is None:
+                    vals = [r[i] for r in table.rows if isinstance(r[i], int)]
+                    vals += [r[i] for r in prepared if isinstance(r[i], int)]
+                    coerced[i] = (max(vals) + 1) if vals else 1
+            if eval_check is not None:
+                self.check_row(table, coerced, eval_check)
+            prepared.append(coerced)
+        table.rows.extend(prepared)
