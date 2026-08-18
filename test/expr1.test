@@ -1,0 +1,894 @@
+statement ok
+CREATE TABLE t1(a INTEGER, b INTEGER, c INTEGER, d INTEGER, e INTEGER)
+
+statement ok
+INSERT INTO t1(e,c,b,d,a) VALUES(103,102,100,101,104)
+
+statement ok
+INSERT INTO t1(a,c,d,e,b) VALUES(107,106,108,109,105)
+
+statement ok
+INSERT INTO t1(e,d,b,a,c) VALUES(110,114,112,111,113)
+
+statement ok
+INSERT INTO t1(d,c,e,a,b) VALUES(116,119,117,115,118)
+
+statement ok
+INSERT INTO t1(c,d,b,e,a) VALUES(123,122,124,120,121)
+
+statement ok
+INSERT INTO t1(a,d,b,e,c) VALUES(127,128,129,126,125)
+
+statement ok
+INSERT INTO t1(e,c,a,d,b) VALUES(132,134,131,133,130)
+
+statement ok
+INSERT INTO t1(a,d,b,e,c) VALUES(138,136,139,135,137)
+
+statement ok
+INSERT INTO t1(e,c,d,a,b) VALUES(144,141,140,142,143)
+
+statement ok
+INSERT INTO t1(b,a,e,d,c) VALUES(145,149,146,148,147)
+
+statement ok
+INSERT INTO t1(b,c,a,d,e) VALUES(151,150,153,154,152)
+
+statement ok
+INSERT INTO t1(c,e,a,d,b) VALUES(155,157,159,156,158)
+
+statement ok
+INSERT INTO t1(c,b,a,d,e) VALUES(161,160,163,164,162)
+
+statement ok
+INSERT INTO t1(b,d,a,e,c) VALUES(167,169,168,165,166)
+
+statement ok
+INSERT INTO t1(d,b,c,e,a) VALUES(171,170,172,173,174)
+
+statement ok
+INSERT INTO t1(e,c,a,d,b) VALUES(177,176,179,178,175)
+
+statement ok
+INSERT INTO t1(b,e,a,d,c) VALUES(181,180,182,183,184)
+
+statement ok
+INSERT INTO t1(c,a,b,e,d) VALUES(187,188,186,189,185)
+
+statement ok
+INSERT INTO t1(d,b,c,e,a) VALUES(190,194,193,192,191)
+
+statement ok
+INSERT INTO t1(a,e,b,d,c) VALUES(199,197,198,196,195)
+
+statement ok
+INSERT INTO t1(b,c,d,a,e) VALUES(200,202,203,201,204)
+
+statement ok
+INSERT INTO t1(c,e,a,b,d) VALUES(208,209,205,206,207)
+
+statement ok
+INSERT INTO t1(c,e,a,d,b) VALUES(214,210,213,212,211)
+
+statement ok
+INSERT INTO t1(b,c,a,d,e) VALUES(218,215,216,217,219)
+
+statement ok
+INSERT INTO t1(b,e,d,a,c) VALUES(223,221,222,220,224)
+
+statement ok
+INSERT INTO t1(d,e,b,a,c) VALUES(226,227,228,229,225)
+
+statement ok
+INSERT INTO t1(a,c,b,e,d) VALUES(234,231,232,230,233)
+
+statement ok
+INSERT INTO t1(e,b,a,c,d) VALUES(237,236,239,235,238)
+
+statement ok
+INSERT INTO t1(e,c,b,a,d) VALUES(242,244,240,243,241)
+
+statement ok
+INSERT INTO t1(e,d,c,b,a) VALUES(246,248,247,249,245)
+
+query I
+SELECT a+b FROM t1 ORDER BY a
+----
+204
+212
+223
+233
+245
+256
+261
+277
+285
+294
+304
+317
+323
+335
+344
+354
+363
+374
+385
+397
+401
+411
+424
+434
+443
+457
+466
+475
+483
+494
+
+query I
+SELECT a-b FROM t1 ORDER BY a
+----
+4
+2
+-1
+-3
+-3
+-2
+1
+-1
+-1
+4
+2
+1
+3
+1
+4
+4
+1
+2
+-3
+1
+1
+-1
+2
+-2
+-3
+1
+2
+3
+3
+-4
+
+query I
+SELECT a*b FROM t1 ORDER BY a
+----
+10400
+11235
+12432
+13570
+15004
+16383
+17030
+19182
+20306
+21605
+23103
+25122
+26080
+28056
+29580
+31325
+32942
+34968
+37054
+39402
+40200
+42230
+44943
+47088
+49060
+52212
+54288
+56404
+58320
+61005
+
+query I
+SELECT a/b FROM t1 ORDER BY a
+----
+1
+1
+0
+0
+0
+0
+1
+0
+0
+1
+1
+1
+1
+1
+1
+1
+1
+1
+0
+1
+1
+0
+1
+0
+0
+1
+1
+1
+1
+0
+
+query I
+SELECT a%b FROM t1 ORDER BY a
+----
+4
+2
+111
+115
+121
+127
+1
+138
+142
+4
+2
+1
+3
+1
+4
+4
+1
+2
+191
+1
+1
+205
+2
+216
+220
+1
+2
+3
+3
+245
+
+query I
+SELECT b%a FROM t1 ORDER BY a
+----
+100
+105
+1
+3
+3
+2
+130
+1
+1
+145
+151
+158
+160
+167
+170
+175
+181
+186
+3
+198
+200
+1
+211
+2
+3
+228
+232
+236
+240
+4
+
+query I
+SELECT a+b*2 FROM t1 ORDER BY a
+----
+304
+317
+335
+351
+369
+385
+391
+416
+428
+439
+455
+475
+483
+502
+514
+529
+544
+560
+579
+595
+601
+617
+635
+652
+666
+685
+698
+711
+723
+743
+
+query I
+SELECT (a+b)*2 FROM t1 ORDER BY a
+----
+408
+424
+446
+466
+490
+512
+522
+554
+570
+588
+608
+634
+646
+670
+688
+708
+726
+748
+770
+794
+802
+822
+848
+868
+886
+914
+932
+950
+966
+988
+
+query I
+SELECT 2*3+4
+----
+10
+
+query I
+SELECT 10-2*3
+----
+4
+
+query I
+SELECT -a FROM t1 ORDER BY a
+----
+-104
+-107
+-111
+-115
+-121
+-127
+-131
+-138
+-142
+-149
+-153
+-159
+-163
+-168
+-174
+-179
+-182
+-188
+-191
+-199
+-201
+-205
+-213
+-216
+-220
+-229
+-234
+-239
+-243
+-245
+
+query I
+SELECT -(a+b) FROM t1 ORDER BY a
+----
+-204
+-212
+-223
+-233
+-245
+-256
+-261
+-277
+-285
+-294
+-304
+-317
+-323
+-335
+-344
+-354
+-363
+-374
+-385
+-397
+-401
+-411
+-424
+-434
+-443
+-457
+-466
+-475
+-483
+-494
+
+query I
+SELECT a*a-a FROM t1 ORDER BY a
+----
+10712
+11342
+12210
+13110
+14520
+16002
+17030
+18906
+20022
+22052
+23256
+25122
+26406
+28056
+30102
+31862
+32942
+35156
+36290
+39402
+40200
+41820
+45156
+46440
+48180
+52212
+54522
+56882
+58806
+59780
+
+query I
+SELECT c/d FROM t1 ORDER BY c
+----
+1
+0
+0
+1
+1
+0
+1
+1
+1
+0
+0
+0
+0
+0
+1
+0
+1
+1
+1
+0
+0
+1
+1
+0
+1
+0
+0
+0
+1
+0
+
+query I
+SELECT d%c FROM t1 ORDER BY c
+----
+101
+2
+1
+116
+122
+3
+133
+136
+140
+1
+4
+1
+3
+3
+171
+2
+183
+185
+190
+1
+1
+207
+212
+2
+222
+1
+2
+3
+241
+1
+
+query I
+SELECT 1+2*3
+----
+7
+
+query I
+SELECT (1+2)*3
+----
+9
+
+query I
+SELECT 7/2
+----
+3
+
+query R
+SELECT 7.0/2
+----
+3.500
+
+query R
+SELECT 7/2.0
+----
+3.500
+
+query R
+SELECT 7.5*2
+----
+15.000
+
+query I
+SELECT 10/3
+----
+3
+
+query I
+SELECT 10%3
+----
+1
+
+query I
+SELECT -10%3
+----
+-1
+
+query I
+SELECT 10%-3
+----
+1
+
+query T
+SELECT typeof(1+2)
+----
+integer
+
+query T
+SELECT typeof(1+2.0)
+----
+real
+
+query T
+SELECT typeof('2'+3)
+----
+integer
+
+query T
+SELECT typeof('2.5'+1)
+----
+real
+
+query T
+SELECT typeof(10/3)
+----
+integer
+
+query T
+SELECT typeof(10/3.0)
+----
+real
+
+query T
+SELECT typeof(1/0)
+----
+null
+
+query T
+SELECT typeof(-5)
+----
+integer
+
+query T
+SELECT typeof(-5.0)
+----
+real
+
+query I
+SELECT 1/0
+----
+NULL
+
+query R
+SELECT 5.5%2
+----
+1.000
+
+query R
+SELECT 7.5%2.5
+----
+1.000
+
+query R
+SELECT -7.5%2
+----
+-1.000
+
+query T
+SELECT typeof(5.5%2)
+----
+real
+
+query T
+SELECT typeof(1%2)
+----
+integer
+
+query R
+SELECT 9223372036854775807 + 1
+----
+9223372036854775808.000
+
+query T
+SELECT typeof(9223372036854775807 + 1)
+----
+real
+
+query R
+SELECT 9223372036854775807 * 2
+----
+18446744073709551616.000
+
+query R
+SELECT -9223372036854775808 - 1
+----
+-9223372036854775808.000
+
+query I
+SELECT '2'+3
+----
+5
+
+query R
+SELECT '2.5'+1
+----
+3.500
+
+query I
+SELECT 'abc'+1
+----
+1
+
+query I
+SELECT '2'*3
+----
+6
+
+query I
+SELECT '4'/2
+----
+2
+
+query R
+SELECT '4.0'/2
+----
+2.000
+
+query R
+SELECT '2.5'*'2'
+----
+5.000
+
+query I
+SELECT -'5'
+----
+-5
+
+query R
+SELECT -'5.5'
+----
+-5.500
+
+query I
+SELECT -'abc'
+----
+0
+
+query T
+SELECT typeof(-'2')
+----
+integer
+
+query T
+SELECT typeof(-'2.5')
+----
+real
+
+query T
+SELECT typeof(-'abc')
+----
+integer
+
+query I
+SELECT +5
+----
+5
+
+query T
+SELECT +'5'
+----
+5
+
+query T
+SELECT typeof(1e10)
+----
+real
+
+query T
+SELECT 2||3
+----
+23
+
+query T
+SELECT 'a'||1
+----
+a1
+
+query T
+SELECT 1||'a'
+----
+1a
+
+query T
+SELECT 1.5||2
+----
+1.52
+
+query T
+SELECT 'a'||'b'||'c'
+----
+abc
+
+query T
+SELECT x'41'||'b'
+----
+Ab
+
+query T
+SELECT x'41'||x'42'
+----
+AB
+
+query T
+SELECT typeof(1||2)
+----
+text
+
+query T
+SELECT typeof(x'41'||x'42')
+----
+text
+
+query T
+SELECT 'a'||NULL
+----
+NULL
+
+query T
+SELECT NULL||'a'
+----
+NULL
+
+query I
+SELECT 1+2||3
+----
+24
+
+query I
+SELECT 1||2+3
+----
+15
+
+query I
+SELECT 1||2*3
+----
+36
+
+query I
+SELECT 1*2||3
+----
+23
+
+query I
+SELECT 2*3+4
+----
+10
+
+query I
+SELECT 2+3*4
+----
+14
+
+query I
+SELECT (2+3)*4
+----
+20
+
+query T
+SELECT 'x'||1.5
+----
+x1.5
+
+query T
+SELECT 'x'||1e10
+----
+x10000000000.0
+
+query I
+SELECT 5/0
+----
+NULL
+
+query I
+SELECT 5%0
+----
+NULL
+
+query I
+SELECT a/0 FROM t1 ORDER BY a LIMIT 3
+----
+NULL
+NULL
+NULL
+
+query I
+SELECT a%0 FROM t1 ORDER BY a LIMIT 3
+----
+NULL
+NULL
+NULL
+

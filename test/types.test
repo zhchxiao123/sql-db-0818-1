@@ -1,0 +1,270 @@
+statement ok
+CREATE TABLE t1(a, b, c, d, e)
+
+statement ok
+INSERT INTO t1 VALUES(1, 1.5, 'hello', x'414243', NULL)
+
+statement ok
+INSERT INTO t1 VALUES(-7, -2.25, '', x'', 0)
+
+statement ok
+INSERT INTO t1 VALUES(0, 0.0, '0', x'00', 'x')
+
+query TTTTT
+SELECT typeof(a), typeof(b), typeof(c), typeof(d), typeof(e) FROM t1
+----
+integer
+real
+text
+blob
+null
+integer
+real
+text
+blob
+integer
+integer
+real
+text
+blob
+text
+
+query TITRT
+SELECT typeof(a), a, typeof(b), b, typeof(c) FROM t1 ORDER BY a
+----
+integer
+-7
+real
+-2.250
+text
+integer
+0
+real
+0.000
+text
+integer
+1
+real
+1.500
+text
+
+query T
+SELECT typeof(a) FROM t1 WHERE a=1
+----
+integer
+
+query T
+SELECT typeof(e) FROM t1 WHERE e IS NULL
+----
+null
+
+statement ok
+CREATE TABLE t2(a INTEGER, b REAL, c TEXT, d NUMERIC, e BLOB)
+
+statement ok
+INSERT INTO t2 VALUES('42', '1.5', 42, '3.14', 'abc')
+
+statement ok
+INSERT INTO t2 VALUES(3.9, 2, 1.5, 7, x'4142')
+
+statement ok
+INSERT INTO t2 VALUES('abc', 'zz', 99, 'no', 123)
+
+query TTTTT
+SELECT typeof(a), typeof(b), typeof(c), typeof(d), typeof(e) FROM t2 ORDER BY a
+----
+real
+real
+text
+integer
+blob
+integer
+real
+text
+real
+text
+text
+text
+text
+text
+integer
+
+query T
+SELECT typeof(a) FROM t2 WHERE a=42
+----
+integer
+
+query T
+SELECT typeof(a) FROM t2 WHERE a=3
+----
+
+query T
+SELECT typeof(c) FROM t2 WHERE c=42
+----
+text
+
+query T
+SELECT typeof(b) FROM t2 WHERE b=1.5
+----
+real
+
+query T
+SELECT typeof(d) FROM t2 WHERE d=3.14
+----
+real
+
+query T
+SELECT typeof(d) FROM t2 WHERE d=7
+----
+integer
+
+query T
+SELECT typeof(e) FROM t2 WHERE e='abc'
+----
+text
+
+statement ok
+CREATE TABLE t3(a NUMERIC)
+
+statement ok
+INSERT INTO t3 VALUES('1.5'),(2),('abc'),(3.0),('4e2')
+
+query TT
+SELECT typeof(a), a FROM t3 ORDER BY a
+----
+real
+1.5
+integer
+2
+integer
+3
+integer
+400
+text
+abc
+
+statement ok
+CREATE TABLE t4(a REAL)
+
+statement ok
+INSERT INTO t4 VALUES(1),(2.5),('3.7'),('abc'),(4)
+
+query TT
+SELECT typeof(a), a FROM t4 ORDER BY a
+----
+real
+1.0
+real
+2.5
+real
+3.7
+real
+4.0
+text
+abc
+
+statement ok
+CREATE TABLE t5(a INTEGER)
+
+statement ok
+INSERT INTO t5 VALUES(1.9),('2.9'),('abc'),(3.0),(4.5)
+
+query T
+SELECT typeof(a) FROM t5 ORDER BY a
+----
+real
+real
+integer
+real
+text
+
+statement ok
+CREATE TABLE t6(a TEXT)
+
+statement ok
+INSERT INTO t6 VALUES(1),(2.5),(x'41'),('x'),(NULL)
+
+query T
+SELECT typeof(a) FROM t6 ORDER BY a
+----
+null
+text
+text
+text
+blob
+
+query T
+SELECT typeof(x'00')
+----
+blob
+
+query T
+SELECT typeof(1e10)
+----
+real
+
+query R
+SELECT 1e10
+----
+10000000000.000
+
+query T
+SELECT typeof(1.5e-5)
+----
+real
+
+query T
+SELECT typeof(9223372036854775807)
+----
+integer
+
+query I
+SELECT 9223372036854775807
+----
+9223372036854775807
+
+query R
+SELECT 1.5e300
+----
+1500000000000000078757140382806630373056702871662238732373781173267703686983362293679557062620671796065556665749325817265413784853040645863467188277180060474272580801389863705606745350692182135089053429852456199917621678558451461320111979114170213741868888183230085264257173504208294580298189100810240.000
+
+query I
+SELECT 0
+----
+0
+
+query T
+SELECT typeof(NULL)
+----
+null
+
+query I
+SELECT 1 < 'a'
+----
+1
+
+query I
+SELECT 'a' < x'61'
+----
+1
+
+query I
+SELECT x'61' > 'a'
+----
+1
+
+query I
+SELECT NULL < 1
+----
+NULL
+
+query I
+SELECT '10' < '9'
+----
+1
+
+query I
+SELECT 10 < 9
+----
+0
+

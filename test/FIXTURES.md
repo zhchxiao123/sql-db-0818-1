@@ -2,14 +2,17 @@
 
 > vendor 固定 commit:sqlite.org/sqllogictest trunk
 > `db57eba95d7c412bb413da5480c8be24`(见 `vendor/sqllogictest/VENDOR.md`)。
+>
+> 本目录夹具按「需求口径:以 sqlite3 3.46.1 期望值重构的 test/ 夹具」构建,
+> 避免验收口径漂移。所有期望值由 sqlite3 3.46.1 实际执行产出(statement
+> error 模式按本引擎真实报错文本书写,运行器以 re.search 匹配)。
+> 生成器:`tools/gen_fixtures.py`(`python3 tools/gen_fixtures.py` 可复现)。
 
-本目录夹具按「需求口径:以 sqlite3 3.46.1 期望值重构的 test/ 夹具」构建,
-避免验收口径漂移。所有期望值(除标注「官方哈希」者)由 sqlite3 3.46.1
-实际执行产出,并已在本模块运行器中逐条通过。
+## 逐文件清单(子需求 0 基线 + 子需求 1 验收)
 
-## 逐文件清单
+### 子需求 0 基线(7 文件,100 条)
 
-| 夹具文件 | 官方对应 | 内容 | 覆盖能力(验收 a6) |
+| 夹具文件 | 官方对应 | 内容 | 覆盖能力 |
 |---|---|---|---|
 | `select1.test` | `select1.test` 表结构与 30 行数据逐条对应(1 CREATE + 30 INSERT);7 条查询与官方逐字一致(官方哈希);10 条额外查询按最小内核重构 | t1(a..e INTEGER),30 行 | CREATE TABLE / INSERT / SELECT / WHERE / ORDER BY / LIMIT |
 | `create.test` | 按 select1 的 CREATE TABLE 形态扩展 | 多种类型列(INTEGER/TEXT/REAL/NUMERIC/BLOB、VARCHAR(n)) | CREATE TABLE |
@@ -19,31 +22,52 @@
 | `orderby.test` | select1 的 ORDER BY 1 场景 | 列名/序号、ASC/DESC | ORDER BY |
 | `limit.test` | select1 中 LIMIT 场景(官方多在算术查询里,重构为纯列引用) | LIMIT 截断、与 WHERE/ORDER BY 组合 | LIMIT |
 
-## select1.test 与官方文件的逐条对应
+### 子需求 1 验收(18 文件,955 条)
 
-官方文件 `vendor/sqllogictest/select1.test`(1,031 条记录):
+全部使用官方 select1.test 的 t1 表结构(a,b,c,d,e INTEGER,30 行)或
+按官方场景自建的小表;查询覆盖本子需求验收 [a2]~[a10] 的能力点。
 
-- 表结构:第 1 条 `statement ok CREATE TABLE t1(a INTEGER, b INTEGER, c INTEGER,
-  d INTEGER, e INTEGER)` — 本夹具第 1 条逐字相同。
-- 数据:第 2~31 条 `INSERT INTO t1(...) VALUES(...)`(30 条,列清单形式)—
-  本夹具第 2~31 条逐字相同。
-- 官方查询中属于最小内核范围(常量/列引用/WHERE 比较/ORDER BY/LIMIT)且
-  不与连接/子查询/聚合/CASE/算术耦合的共 12 条(官方行号 1424/2171/3204/
-  3515/4718/6049/6297/7158/7216/7309/9144/9629);本夹具取其去重后的
-  7 条不同查询(4 条纯列引用+ORDER BY,3 条带 WHERE),期望值直接沿用
-  官方 `N values hashing to <md5>` 哈希行,已用 sqlite3 3.46.1 复算一致。
-- 其余 989 条官方查询依赖算术表达式(a+b*2 等)、子查询、聚合(count/CASE 等),
-  超出最小内核范围,不纳入本基线;后续子需求扩展内核后可按需增量纳入。
+| 夹具文件 | 官方对应 | 内容 | 覆盖能力(验收 id) |
+|---|---|---|---|
+| `types.test` | `types.test` 场景(存储类/亲和/typeof) | 无类型列与五类显式列;亲和转换;字面量(blob/指数/边界);跨存储类比较 | [a2] 类型亲和与存储类转换 |
+| `cast.test` | `cast.test` 场景 | CAST 到 INTEGER/REAL/TEXT/BLOB/NUMERIC;前缀解析;int64 截断;CAST 亲和参与比较 | [a6] CAST |
+| `expr1.test` | `expr1.test` 场景(算术) | + - * / % \|\|;优先级;一元;文本转数值;除零;int64 溢出;类型保持 | [a4] 算术与类型转换 |
+| `expr2.test` | `expr2.test` 场景(比较) | 六种比较 + ==;IS/ISNOT/ISNULL/NOTNULL;列亲和比较;WHERE 组合 | [a4] 比较与类型排序规则 |
+| `expr3.test` | `expr3.test` 场景(逻辑/混合) | AND/OR/NOT 三值;真值转换;无 FROM 常量投影 + WHERE;CASE | [a5] 逻辑与三值逻辑;[a9] CASE |
+| `func1.test` | `func1.test` 场景 | abs/length/substr/coalesce/ifnull/nullif/typeof;参数个数错误 | [a7] 标量函数 |
+| `func2.test` | `func2.test` 场景 | upper/lower/hex/quote/round/sign/unicode/char | [a7] 标量函数 |
+| `func3.test` | `func3.test` 场景 | min/max 标量(多参)/replace/instr/trim/ltrim/rtrim;错误 | [a7] 标量函数 |
+| `func4.test` | `func4.test` 场景 | printf/like/glob 函数形式 | [a7] 标量函数;[a8] LIKE/GLOB |
+| `func5.test` | `func5.test` 场景 | 函数嵌套组合 | [a7] 标量函数 |
+| `like.test` | `like.test` 场景 | LIKE 通配符/大小写/ESCAPE/BLOB 恒 false/NOT LIKE | [a8] LIKE |
+| `in.test` | `in.test` 场景 | IN/NOT IN 列表;NULL 语义;亲和 | [a5] IN 的 NULL 语义;[a9] IN |
+| `null.test` | `null.test` 场景 | NULL 在比较/算术/逻辑/IN/BETWEEN/CASE/IS 中的传播 | [a5] NULL 三值逻辑 |
+| `collate1.test` | `collate1.test` 场景 | 列级 COLLATE(BINARY/NOCASE/RTRIM);比较;ORDER BY | [a10] collation |
+| `collate2.test` | `collate2.test` 场景 | NOCASE 排序与比较;显式 COLLATE | [a10] collation |
+| `collate3.test` | `collate3.test` 场景 | RTRIM 排序与比较 | [a10] collation |
+| `collate4.test` | `collate4.test` 场景 | 表达式级 COLLATE;IN/BETWEEN/|| 与 COLLATE 组合 | [a10] collation |
+| `collate5.test` | `collate5.test` 场景 | 混合 collation 多列排序 | [a10] collation |
+
+## 与官方文件的差异口径(重构说明)
+
+- 官方 expr/func/like/in/collate 系列使用 select1 的 t1 表(1 CREATE + 30
+  INSERT,逐字保留);查询用例按本模块支持范围挑选/改写(官方用例大量依赖
+  子查询、聚合、连接等范围外特性)。
+- 官方 like/in/collate 系列中的部分语句为多语句 statement 记录,本夹具
+  按单语句记录书写;运行器对单语句记录逐条执行,语义等价。
+- `statement error` 记录的模式按本引擎真实报错文本书写(如
+  `wrong number of arguments`、`no such function`),不照抄官方文案;
+  该类记录的功能是验证"该语句确实失败",模式匹配只做防呆。
+- 官方 func 系列含聚合用例(count/sum/avg 等),聚合属后续子需求范围,
+  本夹具不构造聚合查询;min/max 仅使用标量多参形式。
 
 ## 期望值产出方式
 
 ```bash
-python3 - <<'EOF'
-import sqlite3
-conn = sqlite3.connect(":memory:")
-cur = conn.cursor()
-# 执行夹具中的 statement 记录后,对每条 query 记录执行并取出期望值
-EOF
+python3 tools/gen_fixtures.py
 ```
 
-环境自带 sqlite3 3.46.1(python3 -c "import sqlite3; print(sqlite3.sqlite_version)")。
+生成器对每条 query 记录在 sqlite3 3.46.1 中实际执行,按 sqllogictest
+协议格式化期望值(R→%.3f、I→%d、T→文本,NULL→NULL、空串→(empty));
+statement ok 记录同样在 sqlite3 中执行确认成功。环境自带
+sqlite3 3.46.1(`python3 -c "import sqlite3; print(sqlite3.sqlite_version)"`)。

@@ -1,0 +1,279 @@
+query I
+SELECT CAST('123abc' AS INTEGER)
+----
+123
+
+query I
+SELECT CAST('abc' AS INTEGER)
+----
+0
+
+query I
+SELECT CAST('12.7' AS INTEGER)
+----
+12
+
+query I
+SELECT CAST('-42.9' AS INTEGER)
+----
+-42
+
+query I
+SELECT CAST('+42' AS INTEGER)
+----
+42
+
+query I
+SELECT CAST(' 42 ' AS INTEGER)
+----
+42
+
+query I
+SELECT CAST('1e3' AS INTEGER)
+----
+1
+
+query I
+SELECT CAST('3.5e1' AS INTEGER)
+----
+3
+
+query I
+SELECT CAST('0x10' AS INTEGER)
+----
+0
+
+query I
+SELECT CAST(12.7 AS INTEGER)
+----
+12
+
+query I
+SELECT CAST(-12.7 AS INTEGER)
+----
+-12
+
+query I
+SELECT CAST(3.99 AS INTEGER)
+----
+3
+
+query I
+SELECT CAST('' AS INTEGER)
+----
+0
+
+query I
+SELECT CAST(x'313233' AS INTEGER)
+----
+123
+
+query I
+SELECT CAST(NULL AS INTEGER)
+----
+NULL
+
+query R
+SELECT CAST('12.7' AS REAL)
+----
+12.700
+
+query R
+SELECT CAST('abc' AS REAL)
+----
+0.000
+
+query R
+SELECT CAST('1e3' AS REAL)
+----
+1000.000
+
+query R
+SELECT CAST('' AS REAL)
+----
+0.000
+
+query R
+SELECT CAST(x'313233' AS REAL)
+----
+123.000
+
+query R
+SELECT CAST(12 AS REAL)
+----
+12.000
+
+query R
+SELECT CAST(NULL AS REAL)
+----
+NULL
+
+query T
+SELECT CAST(42 AS TEXT)
+----
+42
+
+query T
+SELECT CAST(1.5 AS TEXT)
+----
+1.5
+
+query T
+SELECT CAST(x'4142' AS TEXT)
+----
+AB
+
+query T
+SELECT CAST(1e10 AS TEXT)
+----
+10000000000.0
+
+query T
+SELECT CAST(1e-10 AS TEXT)
+----
+1.0e-10
+
+query T
+SELECT CAST(-0.0 AS TEXT)
+----
+0.0
+
+query T
+SELECT CAST(NULL AS TEXT)
+----
+NULL
+
+query T
+SELECT typeof(CAST('ab' AS BLOB))
+----
+blob
+
+query T
+SELECT typeof(CAST(1 AS BLOB))
+----
+blob
+
+query T
+SELECT hex(CAST(1 AS BLOB))
+----
+31
+
+query T
+SELECT typeof(CAST(1.5 AS BLOB))
+----
+blob
+
+query I
+SELECT CAST(x'01' AS BLOB) = x'01'
+----
+1
+
+query I
+SELECT CAST('1.5' AS NUMERIC)
+----
+1
+
+query I
+SELECT CAST('2' AS NUMERIC)
+----
+2
+
+query I
+SELECT CAST('abc' AS NUMERIC)
+----
+0
+
+query I
+SELECT CAST('12abc' AS NUMERIC)
+----
+12
+
+query R
+SELECT CAST('1.5' AS NUMERIC)
+----
+1.500
+
+query R
+SELECT CAST(2.0 AS NUMERIC)
+----
+2.000
+
+query R
+SELECT CAST(2.5 AS NUMERIC)
+----
+2.500
+
+query I
+SELECT CAST(x'3132' AS NUMERIC)
+----
+12
+
+query T
+SELECT typeof(CAST(NULL AS BLOB))
+----
+null
+
+query I
+SELECT CAST(CAST('12.3' AS REAL) AS INTEGER)
+----
+12
+
+query R
+SELECT CAST(CAST('12.3' AS TEXT) AS REAL)
+----
+12.300
+
+statement ok
+CREATE TABLE ct(a INTEGER, b TEXT)
+
+statement ok
+INSERT INTO ct VALUES(1, '1'),(2, '2'),(3, 'x')
+
+query I
+SELECT CAST(b AS INTEGER) FROM ct ORDER BY a
+----
+1
+2
+0
+
+query I
+SELECT CAST(b AS INTEGER)=a FROM ct ORDER BY a
+----
+1
+1
+0
+
+query I
+SELECT a=CAST(b AS INTEGER) FROM ct ORDER BY a
+----
+1
+1
+0
+
+query T
+SELECT CAST(a AS TEXT) FROM ct ORDER BY a
+----
+1
+2
+3
+
+query I
+SELECT CAST(18446744073709551615 AS INTEGER)
+----
+9223372036854775807
+
+query I
+SELECT CAST(9.223372036854776e18 AS INTEGER)
+----
+9223372036854775807
+
+query I
+SELECT CAST('9223372036854775808' AS INTEGER)
+----
+9223372036854775807
+
+query I
+SELECT CAST('-9223372036854775808' AS INTEGER)
+----
+-9223372036854775808
+
