@@ -8,7 +8,7 @@
 > error 模式按本引擎真实报错文本书写,运行器以 re.search 匹配)。
 > 生成器:`tools/gen_fixtures.py`(`python3 tools/gen_fixtures.py` 可复现)。
 
-## 逐文件清单(子需求 0 基线 + 子需求 1 + 子需求 2 验收)
+## 逐文件清单(子需求 0 基线 + 子需求 1 + 子需求 2 + 子需求 4 验收)
 
 ### 子需求 0 基线(7 文件,100 条)
 
@@ -64,6 +64,19 @@ collation、LIMIT/OFFSET、DISTINCT)。
 | `select4.test` | `select4.test` 场景重构(a1..a5 多列表) | ORDER BY 多列/方向;LIMIT/OFFSET 组合(含逗号形式、表达式、LIMIT -1、LIMIT 0);文本 collation 排序(NOCASE/BINARY/DESC) | SELECT 进阶(ORDER BY collation + LIMIT/OFFSET) |
 | `select5.test` | `select5.test` 官方全连接 → 重构为单表组合 | DISTINCT+WHERE+ORDER BY+LIMIT/OFFSET 组合;LIKE/BETWEEN 谓词;常量投影 + LIMIT/OFFSET/DISTINCT | SELECT 进阶组合 |
 
+### 子需求 4 验收(4 文件,100 条)
+
+覆盖本子需求验收能力点:CREATE INDEX(普通/UNIQUE、单列/多列、含 COLLATE
+列)与约束声明与强制(PRIMARY KEY、UNIQUE、NOT NULL、CHECK、DEFAULT)及
+约束违反时的错误语义。
+
+| 夹具文件 | 官方对应 | 内容 | 覆盖能力(验收 id) |
+|---|---|---|---|
+| `index1.test` | `index*.test` 场景重构 | 普通索引创建(单列/多列/COLLATE);索引存在不影响查询结果;索引名冲突;未知列/表;DROP INDEX | [a2] CREATE INDEX |
+| `index2.test` | `index*.test` 场景重构 | UNIQUE INDEX 强制(INSERT/UPDATE 违反);创建时已有重复数据失败;多列唯一;索引 COLLATE;DROP 后不再强制;NULL 多行允许 | [a2] UNIQUE INDEX |
+| `table1.test` | `table*.test` 场景重构 | 列级 PRIMARY KEY/UNIQUE;表级 PRIMARY KEY/UNIQUE 多列;INTEGER PK NULL 自动分配;TEXT PK 多 NULL;AUTOINCREMENT 解析 | [a3] 约束声明与强制 |
+| `table2.test` | `table*.test` 场景重构 | NOT NULL(+DEFAULT 交互);CHECK 列级/表级/引用其他列/UPDATE 违反/NULL 通过;DEFAULT 括号表达式;PK+UNIQUE+NOT NULL 组合;多行 INSERT 原子性 | [a3][a4] 约束强制与错误语义 |
+
 ## 与官方文件的差异口径(重构说明)
 
 - 官方 expr/func/like/in/collate 系列使用 select1 的 t1 表(1 CREATE + 30
@@ -83,6 +96,11 @@ collation、LIMIT/OFFSET、DISTINCT)。
   REPLACE` 等本子需求范围外形态(对应官方编译选项/约束特性),本夹具不
   构造;DML 错误记录(值数不匹配/未知列/未知表)模式按本引擎真实报错
   文本书写。
+- 官方 index/table 系列依赖视图/触发器/高级连接的用例不在本夹具范围;
+  `CREATE INDEX` 仅记录元数据(查询不使用索引加速,SQLite 语义:索引
+  存在不影响结果);索引名/列名冲突与约束违反错误模式按本引擎真实报错
+  文本书写(UNIQUE constraint failed / NOT NULL constraint failed /
+  CHECK constraint failed 与 sqlite3 3.46.1 文本一致)。
 
 ## 期望值产出方式
 

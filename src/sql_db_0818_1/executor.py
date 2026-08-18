@@ -1,10 +1,18 @@
 """语句执行器:把 AST 变为对内存表的操作。
 
-子需求 1 支持:
-- CREATE TABLE:建表(含列级 COLLATE;不建索引;约束不建模)
-- INSERT:追加行(按列亲和做存储类转换;整行/列清单/多行;值可为表达式)
+子需求 1/2/4 支持:
+- CREATE TABLE:建表(列级 COLLATE/DEFAULT;列级与表级约束:PRIMARY KEY、
+  UNIQUE、NOT NULL、CHECK)
+- CREATE/DROP INDEX:普通/UNIQUE、单列/多列、含 COLLATE 列;索引不加速查询,
+  但 UNIQUE 索引参与约束强制
+- INSERT:追加行(按列亲和做存储类转换;整行/列清单/多行/DEFAULT VALUES;
+  值可为表达式;约束检查:NOT NULL → CHECK → UNIQUE;INTEGER PRIMARY KEY
+  NULL 自动分配)
+- UPDATE:SET 表达式赋值(基于原行求值、逐行约束检查与应用)
+- DELETE:WHERE 过滤
 - SELECT:投影(常量/列引用/算术/函数/CASE/CAST 等表达式)、WHERE(三值逻辑)、
-  ORDER BY(任意表达式 + COLLATE,列名或序号)、LIMIT 截断;无 FROM 时投影常量
+  ORDER BY(任意表达式 + COLLATE,列名或序号)、DISTINCT、LIMIT/OFFSET 截断;
+  无 FROM 时投影常量
 
 表达式求值遵循 SQLite 语义(以 sqlite3 3.46.1 实测为准):
 - 存储类:NULL < INTEGER/REAL < TEXT < BLOB;数值按数值比较,文本按 collation
@@ -19,9 +27,9 @@
 - 标量函数:abs/length/substr/coalesce/ifnull/nullif/typeof/upper/lower/hex/
   quote/round/min/max/sign/unicode/char/replace/instr/trim/ltrim/rtrim/
   like/glob/printf
-- collation:BINARY/NOCASE/RTRIM 影响文本比较与 ORDER BY
+- collation:BINARY/NOCASE/RTRIM 影响文本比较、DISTINCT 与 ORDER BY
 
-范围外(不实现):连接、聚合、子查询、索引、事务、视图、触发器、DISTINCT。
+范围外(不实现):连接、聚合、子查询、事务、视图、触发器、外键级联。
 """
 
 from __future__ import annotations
@@ -46,8 +54,10 @@ from .storage import (
     INT64_MIN,
     Column,
     Database,
+    Index,
     SqlError,
     SqlFunctionError,
+    TableConstraintInfo,
     Value,
     apply_affinity,
     ascii_lower,
@@ -104,9 +114,39 @@ def execute(db: Database, stmt: ast.Statement):
     if isinstance(stmt, ast.Delete):
         _exec_delete(db, stmt)
         return None
+    if isinstance(stmt, ast.CreateIndex):
+        _exec_create_index(db, stmt)
+        return None
+    if isinstance(stmt, ast.DropIndex):
+        _exec_drop_index(db, stmt)
+        return None
     if isinstance(stmt, ast.Select):
         return _exec_select(db, stmt)
     raise SqlError(f"unsupported statement {type(stmt).__name__}")
+
+
+def _exec_create_index(db: Database, stmt: ast.CreateIndex) -> None:
+    index = Index(
+        name=stmt.name,
+        orig_name=stmt.orig_name,
+        table=stmt.table,
+        columns=[
+            Column(
+                name=c.name,
+                orig_name=c.orig_name,
+                type_name="",
+                affinity=AFF_NONE,
+                collation=c.collation,
+            )
+            for c in stmt.columns
+        ],
+        unique=stmt.unique,
+    )
+    db.create_index(index)
+
+
+def _exec_drop_index(db: Database, stmt: ast.DropIndex) -> None:
+    db.drop_index(stmt.name)
 
 
 def _exec_create(db: Database, stmt: ast.CreateTable) -> None:
@@ -118,51 +158,78 @@ def _exec_create(db: Database, stmt: ast.CreateTable) -> None:
         columns.append(
             Column(
                 name=c.name,
+                orig_name=c.orig_name,
                 type_name=c.type_name,
                 affinity=c.affinity,
                 collation=coll,
                 default=c.default,
+                not_null=c.not_null,
+                primary_key=c.primary_key,
+                unique=c.unique,
+                check_expr=c.check[0] if c.check else None,
+                check_raw=c.check[1] if c.check else "",
             )
         )
-    db.create_table(stmt.table, columns)
+    constraints = []
+    for tc in stmt.constraints:
+        constraints.append(
+            TableConstraintInfo(
+                kind=tc.kind,
+                columns=tc.columns,
+                orig_columns=tc.orig_columns,
+                check_expr=tc.check_expr,
+                check_raw=tc.check_raw,
+            )
+        )
+    db.create_table(stmt.table, columns, constraints, orig_name=stmt.orig_name)
+
+
+def _check_predicate(cols, row, expr) -> bool:
+    """CHECK 求值谓词:表达式为 false 时违反(NULL 通过,与 SQLite 一致)。"""
+    v = _eval_expr(cols, row, expr)
+    return not _is_false(v)
 
 
 def _exec_insert(db: Database, stmt: ast.Insert) -> None:
     if stmt.default_values:
         # INSERT INTO t DEFAULT VALUES → 单行,所有列取 DEFAULT/NULL
-        db.insert(stmt.table, [], [[]])
+        db.insert(stmt.table, [], [[]], eval_check=_check_predicate)
         return
     rows: List[List[Value]] = []
     for row in stmt.rows:
         values: List[Value] = [_eval_expr(None, [], e) for e in row]
         rows.append(values)
-    db.insert(stmt.table, stmt.columns, rows)
+    db.insert(stmt.table, stmt.columns, rows, eval_check=_check_predicate)
 
 
 def _exec_update(db: Database, stmt: ast.Update) -> None:
     """UPDATE t SET col=expr, ... WHERE cond。
 
-    SQLite 语义:所有 SET 表达式对【原行】求值,然后再统一应用(交换赋值
-    SET a=b, b=a 成立);WHERE 过滤原行。
+    SQLite 语义:所有 SET 表达式对【原行】求值,然后逐行检查约束并应用
+    (交换赋值 SET a=b, b=a 成功;但 UNIQUE 冲突的行内自交换在第二步失败,
+    与 SQLite 逐行检查一致)。
     """
     table = db.get_table(stmt.table)
     cols = table.columns
     # 先解析目标列,确保列存在
     target_indexes = [table.column_index(col) for col, _ in stmt.assignments]
-    new_rows: List[List[Value]] = []
-    for raw in table.rows:
+    # 逐行:先求值(基于原行),再约束检查(基于已应用的部分行),通过才应用
+    i = 0
+    while i < len(table.rows):
+        raw = table.rows[i]
         if stmt.where is not None:
             cond = _eval_expr(cols, raw, stmt.where)
             if not _is_true(cond):
-                new_rows.append(raw)
+                i += 1
                 continue
         updated = list(raw)
-        # 所有表达式对原行求值
         new_values = [_eval_expr(cols, raw, expr) for _col, expr in stmt.assignments]
         for idx, val in zip(target_indexes, new_values):
             updated[idx] = apply_affinity(val, cols[idx].affinity)
-        new_rows.append(updated)
-    table.rows = new_rows
+        # 约束检查:排除当前行本身(更新到自身值不冲突),但已更新的行计入
+        db.check_row(table, updated, _check_predicate, exclude_idx=i)
+        table.rows[i] = updated
+        i += 1
 
 
 def _exec_delete(db: Database, stmt: ast.Delete) -> None:

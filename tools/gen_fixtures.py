@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成 test/ 下 25 个验收夹具(子需求 1 + 子需求 2)。
+"""生成 test/ 下 29 个验收夹具(子需求 1 + 子需求 2 + 子需求 4)。
 
 口径:官方 sqllogictest(与 child[0] 同一 vendor commit)中的场景按本模块支持范围
 重构;每条 query 记录的期望值由 sqlite3 3.46.1 实际执行产出;statement error
@@ -7,6 +7,7 @@
 
 子需求 1:types/cast/expr1-3/func1-5/like/in/null/collate1-5(18 文件)
 子需求 2:insert1/update1/delete1/select2-5(7 文件,DML + SELECT 进阶)
+子需求 4:index1-2/table1-2(4 文件,索引与约束)
 
 用法:python3 tools/gen_fixtures.py
 输出:test/*.test(见上)
@@ -1177,6 +1178,142 @@ def build_records():
     r.query("I", "SELECT 1 WHERE 1 LIMIT 0")
     r.query("I", "SELECT 1 WHERE 0 LIMIT 1")
 
+    # ================= index1.test(官方 index*.test 场景:CREATE/DROP INDEX) =================
+    r = new_file("index1")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER, b TEXT, c TEXT)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1,'x','a'),(2,'y','b'),(3,'x','c')")
+    # 普通索引:单列/多列/含 COLLATE;索引存在不影响查询结果
+    r.stmt_ok("CREATE INDEX idx1 ON t1(a)")
+    r.query("I", "SELECT a FROM t1 ORDER BY a")
+    r.stmt_ok("CREATE INDEX idx2 ON t1(b, a)")
+    r.stmt_ok("CREATE INDEX idx3 ON t1(c COLLATE NOCASE)")
+    r.query("T", "SELECT c FROM t1 ORDER BY c")
+    r.stmt_ok("INSERT INTO t1 VALUES(4,'w','d')")
+    r.query("I", "SELECT a FROM t1 ORDER BY a")
+    # 索引名冲突
+    r.stmt_err("CREATE INDEX idx1 ON t1(b)", "index idx1 already exists")
+    # 未知列/未知表
+    r.stmt_err("CREATE INDEX idxz ON t1(z)", "no such column")
+    r.stmt_err("CREATE INDEX idxt ON nosuch(a)", "no such table")
+    # DROP INDEX
+    r.stmt_ok("DROP INDEX idx1")
+    r.stmt_err("DROP INDEX idx1", "no such index")
+    r.stmt_err("DROP INDEX nosuch", "no such index")
+
+    # ================= index2.test(官方 index*.test 场景:UNIQUE INDEX) =================
+    r = new_file("index2")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER, b TEXT)")
+    r.stmt_ok("CREATE UNIQUE INDEX uidx ON t1(a)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1,'x'),(2,'y')")
+    r.stmt_err("INSERT INTO t1 VALUES(1,'z')", "UNIQUE constraint failed")
+    r.stmt_ok("INSERT INTO t1 VALUES(NULL,'n1'),(NULL,'n2')")  # UNIQUE 允许多 NULL
+    r.query("I", "SELECT a FROM t1 ORDER BY a")
+    # UNIQUE 索引创建时已有重复数据 → 失败
+    r.stmt_ok("CREATE TABLE t2(a INTEGER)")
+    r.stmt_ok("INSERT INTO t2 VALUES(1),(1)")
+    r.stmt_err("CREATE UNIQUE INDEX u2 ON t2(a)", "UNIQUE constraint failed")
+    # UNIQUE 多列索引
+    r.stmt_ok("CREATE TABLE t3(a INTEGER, b INTEGER)")
+    r.stmt_ok("CREATE UNIQUE INDEX u3 ON t3(a, b)")
+    r.stmt_ok("INSERT INTO t3 VALUES(1,1),(1,2)")
+    r.stmt_err("INSERT INTO t3 VALUES(1,1)", "UNIQUE constraint failed")
+    r.stmt_ok("INSERT INTO t3 VALUES(1,3)")
+    # UNIQUE 索引含 COLLATE
+    r.stmt_ok("CREATE TABLE t4(a TEXT)")
+    r.stmt_ok("CREATE UNIQUE INDEX u4 ON t4(a COLLATE NOCASE)")
+    r.stmt_ok("INSERT INTO t4 VALUES('abc')")
+    r.stmt_err("INSERT INTO t4 VALUES('ABC')", "UNIQUE constraint failed")
+    # UPDATE 违反唯一索引
+    r.stmt_ok("CREATE TABLE t5(a INTEGER)")
+    r.stmt_ok("CREATE UNIQUE INDEX u5 ON t5(a)")
+    r.stmt_ok("INSERT INTO t5 VALUES(1),(2)")
+    r.stmt_err("UPDATE t5 SET a = 1 WHERE a = 2", "UNIQUE constraint failed")
+    # DROP UNIQUE INDEX 后不再强制
+    r.stmt_ok("DROP INDEX u5")
+    r.stmt_ok("INSERT INTO t5 VALUES(2)")
+    r.query("I", "SELECT a FROM t5 ORDER BY a")
+
+    # ================= table1.test(官方 table*.test 场景:PRIMARY KEY / UNIQUE) =================
+    r = new_file("table1")
+    # 列级 PRIMARY KEY
+    r.stmt_ok("CREATE TABLE t1(a INTEGER PRIMARY KEY, b TEXT)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1,'x')")
+    r.stmt_err("INSERT INTO t1 VALUES(1,'y')", "UNIQUE constraint failed")
+    r.stmt_ok("INSERT INTO t1 VALUES(2,'z')")
+    r.query("IT", "SELECT a, b FROM t1 ORDER BY a")
+    # INTEGER PRIMARY KEY:NULL 自动分配
+    r.stmt_ok("CREATE TABLE t2(a INTEGER PRIMARY KEY)")
+    r.stmt_ok("INSERT INTO t2 VALUES(NULL),(NULL)")
+    r.query("I", "SELECT a FROM t2 ORDER BY a")
+    # TEXT PRIMARY KEY:NULL 允许多个(SQLite 非 INTEGER PK 不隐式 NOT NULL)
+    r.stmt_ok("CREATE TABLE t3(a TEXT PRIMARY KEY)")
+    r.stmt_ok("INSERT INTO t3 VALUES(NULL),(NULL),('k')")
+    r.query("T", "SELECT a FROM t3 ORDER BY a")
+    # 列级 UNIQUE
+    r.stmt_ok("CREATE TABLE t4(a INTEGER UNIQUE, b TEXT)")
+    r.stmt_ok("INSERT INTO t4 VALUES(1,'x')")
+    r.stmt_err("INSERT INTO t4 VALUES(1,'y')", "UNIQUE constraint failed")
+    r.stmt_ok("INSERT INTO t4 VALUES(NULL,'n1'),(NULL,'n2')")
+    r.query("IT", "SELECT a, b FROM t4 ORDER BY a")
+    # 表级 PRIMARY KEY 多列
+    r.stmt_ok("CREATE TABLE t5(a INTEGER, b TEXT, PRIMARY KEY(a, b))")
+    r.stmt_ok("INSERT INTO t5 VALUES(1,'x')")
+    r.stmt_err("INSERT INTO t5 VALUES(1,'x')", "UNIQUE constraint failed")
+    r.stmt_ok("INSERT INTO t5 VALUES(1,'y')")
+    # 表级 UNIQUE 多列
+    r.stmt_ok("CREATE TABLE t6(a INTEGER, b TEXT, UNIQUE(a, b))")
+    r.stmt_ok("INSERT INTO t6 VALUES(1,'x')")
+    r.stmt_err("INSERT INTO t6 VALUES(1,'x')", "UNIQUE constraint failed")
+    r.stmt_ok("INSERT INTO t6 VALUES(1,'y')")
+    # AUTOINCREMENT 解析(行为同 INTEGER PK)
+    r.stmt_ok("CREATE TABLE t7(a INTEGER PRIMARY KEY AUTOINCREMENT, b TEXT)")
+    r.stmt_ok("INSERT INTO t7(b) VALUES('x')")
+    r.query("IT", "SELECT a, b FROM t7")
+
+    # ================= table2.test(官方 table*.test 场景:NOT NULL / CHECK / DEFAULT) =================
+    r = new_file("table2")
+    # NOT NULL
+    r.stmt_ok("CREATE TABLE t1(a INTEGER NOT NULL)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1)")
+    r.stmt_err("INSERT INTO t1 VALUES(NULL)", "NOT NULL constraint failed")
+    r.stmt_ok("CREATE TABLE t2(a INTEGER NOT NULL DEFAULT 5)")
+    r.stmt_ok("INSERT INTO t2 DEFAULT VALUES")
+    r.query("I", "SELECT a FROM t2")
+    # CHECK 列级
+    r.stmt_ok("CREATE TABLE t3(a INTEGER CHECK(a > 0))")
+    r.stmt_ok("INSERT INTO t3 VALUES(1)")
+    r.stmt_err("INSERT INTO t3 VALUES(0)", "CHECK constraint failed")
+    r.stmt_ok("INSERT INTO t3 VALUES(NULL)")  # CHECK 遇 NULL 通过
+    r.query("I", "SELECT a FROM t3 ORDER BY a")
+    # CHECK 表级
+    r.stmt_ok("CREATE TABLE t4(a INTEGER, CHECK(a >= 0 AND a < 10))")
+    r.stmt_ok("INSERT INTO t4 VALUES(5)")
+    r.stmt_err("INSERT INTO t4 VALUES(10)", "CHECK constraint failed")
+    # CHECK 引用其他列
+    r.stmt_ok("CREATE TABLE t5(a INTEGER, b INTEGER CHECK(b < a))")
+    r.stmt_ok("INSERT INTO t5 VALUES(5, 3)")
+    r.stmt_err("INSERT INTO t5 VALUES(2, 9)", "CHECK constraint failed")
+    # CHECK 违反在 UPDATE
+    r.stmt_ok("CREATE TABLE t6(a INTEGER CHECK(a > 0))")
+    r.stmt_ok("INSERT INTO t6 VALUES(1)")
+    r.stmt_err("UPDATE t6 SET a = -5", "CHECK constraint failed")
+    # DEFAULT 括号表达式
+    r.stmt_ok("CREATE TABLE t7(a INTEGER DEFAULT (1+2))")
+    r.stmt_ok("INSERT INTO t7 DEFAULT VALUES")
+    r.query("IT", "SELECT a, typeof(a) FROM t7")
+    # 约束组合:PK + UNIQUE + NOT NULL
+    r.stmt_ok("CREATE TABLE t8(a INTEGER PRIMARY KEY, b TEXT UNIQUE NOT NULL)")
+    r.stmt_ok("INSERT INTO t8 VALUES(1,'x')")
+    r.stmt_err("INSERT INTO t8 VALUES(1,'y')", "UNIQUE constraint failed")
+    r.stmt_err("INSERT INTO t8 VALUES(2,'x')", "UNIQUE constraint failed")
+    r.stmt_err("INSERT INTO t8 VALUES(2,NULL)", "NOT NULL constraint failed")
+    r.query("IT", "SELECT a, b FROM t8")
+    # 多行 INSERT 原子性:任一行违反则整条失败
+    r.stmt_ok("CREATE TABLE t9(a INTEGER UNIQUE)")
+    r.stmt_ok("INSERT INTO t9 VALUES(1),(2)")
+    r.stmt_err("INSERT INTO t9 VALUES(3),(1),(4)", "UNIQUE constraint failed")
+    r.query("I", "SELECT a FROM t9 ORDER BY a")
+
     for fb in files.values():
         fb.close()
     return files
@@ -1191,6 +1328,7 @@ def main():
         "collate3", "collate4", "collate5",
         "insert1", "update1", "delete1", "select2", "select3", "select4",
         "select5",
+        "index1", "index2", "table1", "table2",
     ]
     for name in order:
         fb = files[name]

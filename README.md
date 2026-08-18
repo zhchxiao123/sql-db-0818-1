@@ -36,13 +36,20 @@ python3 run_sqllogictest.py                 # sqllogictest 运行器:跑 test/*.
 ### DDL / DML
 - `CREATE TABLE` 基础形态:列定义 + 类型名(INTEGER/TEXT/REAL/BLOB/NUMERIC、
   VARCHAR(n) 等,按 SQLite 亲和规则转换存储类);无类型列 → BLOB 亲和;
-  列级 `COLLATE BINARY|NOCASE|RTRIM`;列级 `DEFAULT` 字面量(未指定列时生效,
-  值按列亲和转换)
+  列级 `COLLATE BINARY|NOCASE|RTRIM`;列级 `DEFAULT`(字面量或括号常量表达式)
+- 约束声明与强制:列级 `PRIMARY KEY`/`UNIQUE`/`NOT NULL`/`CHECK`;表级
+  `PRIMARY KEY (cols)`/`UNIQUE (cols)`/`CHECK (expr)`;`AUTOINCREMENT` 解析;
+  违反时报与 sqlite3 一致的错误文本(UNIQUE/NOT NULL/CHECK constraint failed);
+  CHECK 遇 NULL 通过;UNIQUE 允许任意多 NULL;INTEGER PRIMARY KEY 的 NULL
+  自动分配 max+1;多行 INSERT 原子(任一行违反整条失败)
+- `CREATE INDEX` / `DROP INDEX`:普通/UNIQUE、单列/多列、含 COLLATE 列;
+  索引仅记录元数据(不加速查询,SQLite 语义:索引存在不影响结果);
+  UNIQUE INDEX 参与约束强制(含创建时校验已有数据)
 - `INSERT`:整行 / 多行 VALUES / 列清单,未指定列填 DEFAULT(无 DEFAULT 则
   NULL);`INSERT ... DEFAULT VALUES`;显式 NULL 覆盖 DEFAULT;值可为表达式
 - `UPDATE`:SET 表达式赋值(可引用本行列,所有表达式对原行求值后统一应用,
   支持 `SET a=b, b=a` 交换)、可选 WHERE 过滤、无 WHERE 全表;赋值按列亲和
-  转换
+  转换;逐行约束检查(更新到自身值不冲突,UNIQUE 交换失败与 SQLite 一致)
 - `DELETE`:可选 WHERE 过滤、无 WHERE 全删
 
 ### SELECT 与表达式(子需求 1)
@@ -70,8 +77,8 @@ python3 run_sqllogictest.py                 # sqllogictest 运行器:跑 test/*.
   覆盖列 collation
 
 ### 范围外(后续子需求)
-连接、子查询、聚合(count/sum/avg/min/max 单参等)、索引、视图、触发器、
-事务、GROUP BY。
+连接、子查询、聚合(count/sum/avg/min/max 单参等)、视图、触发器、
+事务、外键级联、GROUP BY。
 
 ## sqllogictest 运行器
 

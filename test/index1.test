@@ -1,0 +1,58 @@
+statement ok
+CREATE TABLE t1(a INTEGER, b TEXT, c TEXT)
+
+statement ok
+INSERT INTO t1 VALUES(1,'x','a'),(2,'y','b'),(3,'x','c')
+
+statement ok
+CREATE INDEX idx1 ON t1(a)
+
+query I
+SELECT a FROM t1 ORDER BY a
+----
+1
+2
+3
+
+statement ok
+CREATE INDEX idx2 ON t1(b, a)
+
+statement ok
+CREATE INDEX idx3 ON t1(c COLLATE NOCASE)
+
+query T
+SELECT c FROM t1 ORDER BY c
+----
+a
+b
+c
+
+statement ok
+INSERT INTO t1 VALUES(4,'w','d')
+
+query I
+SELECT a FROM t1 ORDER BY a
+----
+1
+2
+3
+4
+
+statement error index idx1 already exists
+CREATE INDEX idx1 ON t1(b)
+
+statement error no such column
+CREATE INDEX idxz ON t1(z)
+
+statement error no such table
+CREATE INDEX idxt ON nosuch(a)
+
+statement ok
+DROP INDEX idx1
+
+statement error no such index
+DROP INDEX idx1
+
+statement error no such index
+DROP INDEX nosuch
+

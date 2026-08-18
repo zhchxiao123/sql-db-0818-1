@@ -1,0 +1,103 @@
+statement ok
+CREATE TABLE t1(a INTEGER PRIMARY KEY, b TEXT)
+
+statement ok
+INSERT INTO t1 VALUES(1,'x')
+
+statement error UNIQUE constraint failed
+INSERT INTO t1 VALUES(1,'y')
+
+statement ok
+INSERT INTO t1 VALUES(2,'z')
+
+query IT
+SELECT a, b FROM t1 ORDER BY a
+----
+1
+x
+2
+z
+
+statement ok
+CREATE TABLE t2(a INTEGER PRIMARY KEY)
+
+statement ok
+INSERT INTO t2 VALUES(NULL),(NULL)
+
+query I
+SELECT a FROM t2 ORDER BY a
+----
+1
+2
+
+statement ok
+CREATE TABLE t3(a TEXT PRIMARY KEY)
+
+statement ok
+INSERT INTO t3 VALUES(NULL),(NULL),('k')
+
+query T
+SELECT a FROM t3 ORDER BY a
+----
+NULL
+NULL
+k
+
+statement ok
+CREATE TABLE t4(a INTEGER UNIQUE, b TEXT)
+
+statement ok
+INSERT INTO t4 VALUES(1,'x')
+
+statement error UNIQUE constraint failed
+INSERT INTO t4 VALUES(1,'y')
+
+statement ok
+INSERT INTO t4 VALUES(NULL,'n1'),(NULL,'n2')
+
+query IT
+SELECT a, b FROM t4 ORDER BY a
+----
+NULL
+n1
+NULL
+n2
+1
+x
+
+statement ok
+CREATE TABLE t5(a INTEGER, b TEXT, PRIMARY KEY(a, b))
+
+statement ok
+INSERT INTO t5 VALUES(1,'x')
+
+statement error UNIQUE constraint failed
+INSERT INTO t5 VALUES(1,'x')
+
+statement ok
+INSERT INTO t5 VALUES(1,'y')
+
+statement ok
+CREATE TABLE t6(a INTEGER, b TEXT, UNIQUE(a, b))
+
+statement ok
+INSERT INTO t6 VALUES(1,'x')
+
+statement error UNIQUE constraint failed
+INSERT INTO t6 VALUES(1,'x')
+
+statement ok
+INSERT INTO t6 VALUES(1,'y')
+
+statement ok
+CREATE TABLE t7(a INTEGER PRIMARY KEY AUTOINCREMENT, b TEXT)
+
+statement ok
+INSERT INTO t7(b) VALUES('x')
+
+query IT
+SELECT a, b FROM t7
+----
+1
+x
+

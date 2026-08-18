@@ -1,11 +1,13 @@
 """SQL AST 定义。
 
-覆盖 CREATE TABLE / INSERT / UPDATE / DELETE / SELECT 以及子需求 1 的表达式
-系统:字面量、列引用、算术(+ - * / % ||)、比较(= != <> < <= > >= IS IS NOT)、
-布尔组合(AND/OR/NOT)、ISNULL/NOTNULL、CAST、标量函数、LIKE/GLOB、IN、
-BETWEEN、CASE、COLLATE 后缀。SELECT 支持 WHERE/ORDER BY/LIMIT/OFFSET/DISTINCT。
+覆盖 CREATE TABLE / INSERT / UPDATE / DELETE / SELECT / CREATE INDEX /
+DROP INDEX 以及子需求 1 的表达式系统:字面量、列引用、算术(+ - * / % ||)、
+比较(= != <> < <= > >= IS IS NOT)、布尔组合(AND/OR/NOT)、ISNULL/NOTNULL、
+CAST、标量函数、LIKE/GLOB、IN、BETWEEN、CASE、COLLATE 后缀。SELECT 支持
+WHERE/ORDER BY/LIMIT/OFFSET/DISTINCT。CREATE TABLE 支持列级与表级约束
+(PRIMARY KEY / UNIQUE / NOT NULL / CHECK / DEFAULT)。
 
-范围外特性(连接、子查询、聚合、索引、事务、视图、触发器)不在此处建模。
+范围外特性(连接、子查询、聚合、视图、触发器、事务、外键级联)不在此处建模。
 """
 
 from __future__ import annotations
@@ -109,16 +111,55 @@ class Statement:
 @dataclass
 class ColumnDef:
     name: str  # 已归一化为大写
-    type_name: str  # 原始类型名,如 INTEGER / VARCHAR(10)
-    affinity: str  # 'INTEGER' | 'REAL' | 'TEXT' | 'BLOB' | 'NUMERIC' | 'NONE'
+    orig_name: str = ""  # 声明时的原始大小写(用于错误文本)
+    type_name: str = ""  # 原始类型名,如 INTEGER / VARCHAR(10)
+    affinity: str = "BLOB"  # 'INTEGER' | 'REAL' | 'TEXT' | 'BLOB' | 'NUMERIC' | 'NONE'
     collation: str = "BINARY"  # 列级 COLLATE,默认 BINARY
     default: "Optional[Value]" = None  # DEFAULT 字面量(未指定 → None)
+    not_null: bool = False  # NOT NULL 约束
+    primary_key: bool = False  # 列级 PRIMARY KEY
+    unique: bool = False  # 列级 UNIQUE
+    check: "Optional[Tuple[Expr, str]]" = None  # CHECK 约束:(表达式, 原始文本)
+
+
+@dataclass
+class TableConstraint:
+    """表级约束(PRIMARY KEY / UNIQUE / CHECK)。"""
+
+    kind: str  # 'PRIMARY KEY' | 'UNIQUE' | 'CHECK'
+    columns: List[str] = field(default_factory=list)  # PK/UNIQUE 的列(大写)
+    orig_columns: List[str] = field(default_factory=list)  # 原始大小写
+    check_expr: Optional[Expr] = None  # CHECK 表达式
+    check_raw: str = ""  # CHECK 原始文本
 
 
 @dataclass
 class CreateTable(Statement):
     table: str
+    orig_name: str = ""  # 原始大小写(错误文本用)
     columns: List[ColumnDef] = field(default_factory=list)
+    constraints: List[TableConstraint] = field(default_factory=list)
+
+
+@dataclass
+class IndexColumn:
+    name: str  # 大写
+    orig_name: str = ""  # 原始大小写
+    collation: str = "BINARY"
+
+
+@dataclass
+class CreateIndex(Statement):
+    name: str
+    orig_name: str = ""  # 原始大小写(错误文本用)
+    table: str = ""
+    columns: List[IndexColumn] = field(default_factory=list)
+    unique: bool = False
+
+
+@dataclass
+class DropIndex(Statement):
+    name: str
 
 
 @dataclass
