@@ -1,12 +1,11 @@
 """SQL AST 定义。
 
-覆盖 CREATE TABLE / INSERT / SELECT 以及子需求 1 的表达式系统:
-字面量、列引用、算术(+ - * / % ||)、比较(= != <> < <= > >= IS IS NOT)、
+覆盖 CREATE TABLE / INSERT / UPDATE / DELETE / SELECT 以及子需求 1 的表达式
+系统:字面量、列引用、算术(+ - * / % ||)、比较(= != <> < <= > >= IS IS NOT)、
 布尔组合(AND/OR/NOT)、ISNULL/NOTNULL、CAST、标量函数、LIKE/GLOB、IN、
-BETWEEN、CASE、COLLATE 后缀。
+BETWEEN、CASE、COLLATE 后缀。SELECT 支持 WHERE/ORDER BY/LIMIT/OFFSET/DISTINCT。
 
-范围外特性(连接、子查询、聚合、索引、事务、视图、触发器、DISTINCT、
-UPDATE/DELETE)不在此处建模。
+范围外特性(连接、子查询、聚合、索引、事务、视图、触发器)不在此处建模。
 """
 
 from __future__ import annotations
@@ -113,6 +112,7 @@ class ColumnDef:
     type_name: str  # 原始类型名,如 INTEGER / VARCHAR(10)
     affinity: str  # 'INTEGER' | 'REAL' | 'TEXT' | 'BLOB' | 'NUMERIC' | 'NONE'
     collation: str = "BINARY"  # 列级 COLLATE,默认 BINARY
+    default: "Optional[Value]" = None  # DEFAULT 字面量(未指定 → None)
 
 
 @dataclass
@@ -126,6 +126,20 @@ class Insert(Statement):
     table: str
     columns: Optional[List[str]]  # None = 未指定列清单
     rows: List[List[Expr]] = field(default_factory=list)
+    default_values: bool = False  # INSERT ... DEFAULT VALUES
+
+
+@dataclass
+class Update(Statement):
+    table: str
+    assignments: List[Tuple[str, Expr]]  # (列名, 表达式)
+    where: Optional[Expr] = None
+
+
+@dataclass
+class Delete(Statement):
+    table: str
+    where: Optional[Expr] = None
 
 
 @dataclass
@@ -141,3 +155,5 @@ class Select(Statement):
     where: Optional[Expr] = None
     order_by: List[OrderItem] = field(default_factory=list)
     limit: Optional[int] = None
+    offset: Optional[int] = None
+    distinct: bool = False

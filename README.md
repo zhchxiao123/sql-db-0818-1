@@ -36,14 +36,23 @@ python3 run_sqllogictest.py                 # sqllogictest 运行器:跑 test/*.
 ### DDL / DML
 - `CREATE TABLE` 基础形态:列定义 + 类型名(INTEGER/TEXT/REAL/BLOB/NUMERIC、
   VARCHAR(n) 等,按 SQLite 亲和规则转换存储类);无类型列 → BLOB 亲和;
-  列级 `COLLATE BINARY|NOCASE|RTRIM`
-- `INSERT`:整行 / 多行 VALUES / 列清单,未指定列填 NULL;值可为表达式
+  列级 `COLLATE BINARY|NOCASE|RTRIM`;列级 `DEFAULT` 字面量(未指定列时生效,
+  值按列亲和转换)
+- `INSERT`:整行 / 多行 VALUES / 列清单,未指定列填 DEFAULT(无 DEFAULT 则
+  NULL);`INSERT ... DEFAULT VALUES`;显式 NULL 覆盖 DEFAULT;值可为表达式
+- `UPDATE`:SET 表达式赋值(可引用本行列,所有表达式对原行求值后统一应用,
+  支持 `SET a=b, b=a` 交换)、可选 WHERE 过滤、无 WHERE 全表;赋值按列亲和
+  转换
+- `DELETE`:可选 WHERE 过滤、无 WHERE 全删
 
 ### SELECT 与表达式(子需求 1)
 - 投影:常量、列引用、算术、函数、CASE、CAST、`*` 展开、`expr [AS] alias`
 - `WHERE`:比较、三值逻辑(AND/OR/NOT)、LIKE/GLOB/IN/BETWEEN/IS 等
 - `ORDER BY`:任意表达式 + 列级/显式 COLLATE,列名或序号,ASC/DESC
-- `LIMIT`:整数截断
+- `DISTINCT`:按投影行去重(NULL 视为相同;int/float 数值视为相同;文本按
+  表达式 collation),可与 WHERE/ORDER BY/LIMIT 组合
+- `LIMIT` / `OFFSET`:接受表达式;`LIMIT n, m` 逗号形式(= OFFSET n LIMIT m);
+  `LIMIT -1` = 不限制;OFFSET 负值按 0;OFFSET 必须伴随 LIMIT
 - 字面量:整数/浮点(含指数与边界形式)/字符串/blob(`x'...'`)/NULL/TRUE/FALSE
 - 类型亲和与存储类转换:INTEGER/REAL/TEXT/BLOB/NUMERIC(以 sqlite3 3.46.1 实测为准)
 - 算术:`+ - * / % ||`;整数除法向零截断;`%` C 风格;除零 → NULL;int64 溢出 → REAL
@@ -57,11 +66,12 @@ python3 run_sqllogictest.py                 # sqllogictest 运行器:跑 test/*.
 - `LIKE`/`GLOB`:通配符(`% _` / `* ? [...]`)、LIKE 仅 ASCII 大小写不敏感、
   ESCAPE;任一操作数为 BLOB 时 LIKE 恒为 false
 - `IN`(列表,含 NULL 语义)/ `BETWEEN` / `CASE`(简单与搜索形式)
-- collation:BINARY/NOCASE/RTRIM 影响比较与 ORDER BY;显式 COLLATE 覆盖列 collation
+- collation:BINARY/NOCASE/RTRIM 影响比较、DISTINCT 与 ORDER BY;显式 COLLATE
+  覆盖列 collation
 
 ### 范围外(后续子需求)
 连接、子查询、聚合(count/sum/avg/min/max 单参等)、索引、视图、触发器、
-事务、DISTINCT、UPDATE/DELETE、GROUP BY。
+事务、GROUP BY。
 
 ## sqllogictest 运行器
 
@@ -94,6 +104,10 @@ python3 run_sqllogictest.py                 # sqllogictest 运行器:跑 test/*.
 
 - 官方 select1.test 共 1,031 条记录,绝大多数依赖连接/子查询/聚合/CASE/
   算术等超出本模块支持范围的特性;本模块按需求口径以「sqlite3 3.46.1 期望值
-  重构的 test/ 夹具」作为基线验收,不声称全量官方套件通过。
+  重构的 test/ 夹具」作为验收,不声称全量官方套件通过(select2-5 同理,
+  仅收编不依赖连接/子查询/聚合/视图/触发器的场景)。
+- `INSERT ... VALUES(DEFAULT)`(VALUES 内 DEFAULT 关键字)与 `UPDATE ... LIMIT`、
+  `INSERT OR REPLACE` 等形态不在本子需求范围(SQLite 部分需编译选项/约束),
+  夹具不构造。
 - 性能:解释型实现,未与 C 的 sqlite3 做 wall-clock 对标;后续子需求若要求
   全量套件性能对标 sqlite3,需另行评估。

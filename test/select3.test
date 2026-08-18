@@ -1,0 +1,116 @@
+statement ok
+CREATE TABLE t1(a INTEGER, b TEXT)
+
+statement ok
+INSERT INTO t1 VALUES(1,'x'),(2,'y'),(1,'x'),(3,'z'),(2,'y'),(1,'w'),(NULL,'n'),(NULL,'n')
+
+query I
+SELECT DISTINCT a FROM t1 ORDER BY a
+----
+NULL
+1
+2
+3
+
+query T
+SELECT DISTINCT b FROM t1 ORDER BY b
+----
+n
+w
+x
+y
+z
+
+query IT
+SELECT DISTINCT a, b FROM t1 ORDER BY a, b
+----
+NULL
+n
+1
+w
+1
+x
+2
+y
+3
+z
+
+query I
+SELECT DISTINCT a FROM t1 WHERE a IS NOT NULL ORDER BY a
+----
+1
+2
+3
+
+query I
+SELECT DISTINCT a FROM t1 ORDER BY a LIMIT 2
+----
+NULL
+1
+
+query T
+SELECT DISTINCT b FROM t1 ORDER BY b LIMIT 2 OFFSET 1
+----
+w
+x
+
+query I
+SELECT DISTINCT a+1 FROM t1 ORDER BY a+1
+----
+NULL
+2
+3
+4
+
+query T
+SELECT DISTINCT b FROM t1 ORDER BY b DESC
+----
+z
+y
+x
+w
+n
+
+statement ok
+CREATE TABLE t2(a TEXT COLLATE NOCASE)
+
+statement ok
+INSERT INTO t2 VALUES('a'),('A'),('b'),('B'),('a')
+
+query T
+SELECT DISTINCT a FROM t2 ORDER BY a
+----
+a
+b
+
+statement ok
+CREATE TABLE t3(a)
+
+statement ok
+INSERT INTO t3 VALUES(1),(1.0),(2),(2.0),(3)
+
+query T
+SELECT DISTINCT a FROM t3 ORDER BY a
+----
+1
+2
+3
+
+statement ok
+CREATE TABLE t4(a INTEGER)
+
+statement ok
+INSERT INTO t4 VALUES(1),(2),(1),(3),(2),(4),(5),(3)
+
+query I
+SELECT DISTINCT a FROM t4 WHERE a >= 2 ORDER BY a LIMIT 2
+----
+2
+3
+
+query I
+SELECT DISTINCT a FROM t4 WHERE a >= 2 ORDER BY a LIMIT 2 OFFSET 1
+----
+3
+4
+

@@ -1,0 +1,93 @@
+statement ok
+CREATE TABLE t1(a INTEGER, b TEXT)
+
+statement ok
+INSERT INTO t1 VALUES(3,'c'),(1,'a'),(2,'b'),(1,'a'),(3,'d'),(2,'b'),(1,'e')
+
+query I
+SELECT DISTINCT a FROM t1 WHERE b >= 'b' ORDER BY a LIMIT 2
+----
+1
+2
+
+query IT
+SELECT a, b FROM t1 WHERE a >= 2 ORDER BY a DESC, b LIMIT 3
+----
+3
+c
+3
+d
+2
+b
+
+query IT
+SELECT DISTINCT a, b FROM t1 ORDER BY a, b LIMIT 3 OFFSET 1
+----
+1
+e
+2
+b
+3
+c
+
+query T
+SELECT DISTINCT b FROM t1 WHERE a = 1 ORDER BY b
+----
+a
+e
+
+query I
+SELECT a FROM t1 ORDER BY a LIMIT 2, 3
+----
+1
+2
+2
+
+query I
+SELECT DISTINCT a FROM t1 ORDER BY a LIMIT -1 OFFSET 1
+----
+2
+3
+
+query I
+SELECT a FROM t1 WHERE b LIKE 'a%' OR b LIKE 'e%' ORDER BY a
+----
+1
+1
+1
+
+query I
+SELECT a FROM t1 WHERE a BETWEEN 1 AND 2 ORDER BY a
+----
+1
+1
+1
+2
+2
+
+query T
+SELECT DISTINCT b FROM t1 ORDER BY b DESC LIMIT 2
+----
+e
+d
+
+query II
+SELECT 1, 2 LIMIT 1
+----
+1
+2
+
+query II
+SELECT DISTINCT 1, 2
+----
+1
+2
+
+query I
+SELECT 1 WHERE 1 LIMIT 0
+----
+
+query I
+SELECT 1 WHERE 0 LIMIT 1
+----
+

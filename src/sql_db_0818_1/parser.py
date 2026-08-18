@@ -89,10 +89,60 @@ _CLAUSE_KEYWORDS = {
     "REFERENCES",
     "CONSTRAINT",
     "FOREIGN",
+    "OFFSET",
+    "SET",
+    "UPDATE",
+    "DELETE",
 }
 
 # 聚合/窗口函数等本子集不支持
 _AGGREGATES = {"COUNT", "SUM", "AVG", "TOTAL", "GROUP_CONCAT"}
+
+
+def _const_eval(expr: ast.Expr):
+    """对不含列引用的常量表达式做静态求值(LIMIT/OFFSET 用)。
+
+    只支持字面量、一元 +/-(数值)、二元算术与 ||。含列引用/函数/比较等
+    一律视为不可静态求值并抛 SqlParseError。
+    """
+    from . import ast as _ast  # 局部导入避免循环依赖
+
+    if isinstance(expr, _ast.Literal):
+        v = expr.value
+        if isinstance(v, bool):
+            return int(v)
+        return v
+    if isinstance(expr, _ast.UnaryOp):
+        v = _const_eval(expr.operand)
+        if expr.op == "-":
+            if isinstance(v, (int, float)):
+                return -v
+        elif expr.op == "+":
+            if isinstance(v, (int, float)):
+                return +v
+        raise SqlParseError("LIMIT/OFFSET expression not constant")
+    if isinstance(expr, _ast.BinaryOp):
+        left = _const_eval(expr.left)
+        right = _const_eval(expr.right)
+        if expr.op == "+":
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left + right
+        elif expr.op == "-":
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left - right
+        elif expr.op == "*":
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left * right
+        elif expr.op == "/":
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                if right == 0:
+                    raise SqlParseError("LIMIT/OFFSET division by zero")
+                return left / right
+        elif expr.op == "||":
+            if isinstance(left, (str, int, float)) and isinstance(right, (str, int, float)):
+                return str(left) + str(right)
+        raise SqlParseError("LIMIT/OFFSET expression not constant")
+    raise SqlParseError("LIMIT/OFFSET expression not constant")
 
 
 class SqlParseError(Exception):
@@ -170,6 +220,10 @@ class _Parser:
                 return self._parse_insert()
             if kw == "SELECT":
                 return self._parse_select()
+            if kw == "UPDATE":
+                return self._parse_update()
+            if kw == "DELETE":
+                return self._parse_delete()
             raise SqlParseError(f'near "{kw}": syntax error')
         raise SqlParseError(f'near "{tok.text}": syntax error')
 
@@ -186,12 +240,16 @@ class _Parser:
             collation = "BINARY"
             if self.accept_kw("COLLATE"):
                 collation = self._expect_ident()
+            default: Optional[ast.Value] = None
+            if self.accept_kw("DEFAULT"):
+                default = self._parse_default_literal()
             columns.append(
                 ast.ColumnDef(
                     name=name,
                     type_name=type_name,
                     affinity=affinity_of_type(type_name),
                     collation=collation,
+                    default=default,
                 )
             )
             if self.accept_sym(","):
@@ -199,6 +257,27 @@ class _Parser:
             break
         self.expect_sym(")")
         return ast.CreateTable(table=table, columns=columns)
+
+    def _parse_default_literal(self) -> Optional[ast.Value]:
+        """列 DEFAULT 子句的字面量值(SQLite 只允许字面量,表达式是语法错误)。"""
+        tok = self.peek()
+        if tok is None:
+            raise SqlParseError("DEFAULT requires a literal value")
+        if tok.kind == "number":
+            self.pos += 1
+            return tok.value
+        if tok.kind == "string":
+            self.pos += 1
+            return tok.value
+        if tok.kind == "blob":
+            self.pos += 1
+            return tok.value
+        if tok.kind == "ident":
+            if tok.text == "NULL":
+                self.pos += 1
+                return None
+            raise SqlParseError(f'near "{tok.text}": syntax error (DEFAULT requires a literal)')
+        raise SqlParseError(f'near "{tok.text}": syntax error (DEFAULT requires a literal)')
 
     def _parse_type_name(self) -> str:
         """类型名:标识符 + 可选 (n[,m])。如 INTEGER、VARCHAR(10)、DECIMAL(10,2)。
@@ -243,6 +322,10 @@ class _Parser:
                     continue
                 break
             self.expect_sym(")")
+        # INSERT INTO t DEFAULT VALUES
+        if self.accept_kw("DEFAULT"):
+            self.expect_kw("VALUES")
+            return ast.Insert(table=table, columns=columns, default_values=True)
         self.expect_kw("VALUES")
         rows: List[List[ast.Expr]] = []
         while True:
@@ -260,9 +343,39 @@ class _Parser:
             break
         return ast.Insert(table=table, columns=columns, rows=rows)
 
+    # ------------------------------------------------------------ UPDATE
+    def _parse_update(self) -> ast.Update:
+        self.expect_kw("UPDATE")
+        table = self._expect_ident()
+        self.expect_kw("SET")
+        assignments: List[Tuple[str, ast.Expr]] = []
+        while True:
+            col = self._expect_ident()
+            self.expect_sym("=")
+            value = self._parse_expr()
+            assignments.append((col, value))
+            if self.accept_sym(","):
+                continue
+            break
+        where: Optional[ast.Expr] = None
+        if self.accept_kw("WHERE"):
+            where = self._parse_expr()
+        return ast.Update(table=table, assignments=assignments, where=where)
+
+    # ------------------------------------------------------------ DELETE
+    def _parse_delete(self) -> ast.Delete:
+        self.expect_kw("DELETE")
+        self.expect_kw("FROM")
+        table = self._expect_ident()
+        where: Optional[ast.Expr] = None
+        if self.accept_kw("WHERE"):
+            where = self._parse_expr()
+        return ast.Delete(table=table, where=where)
+
     # ------------------------------------------------------------ SELECT
     def _parse_select(self) -> ast.Select:
         self.expect_kw("SELECT")
+        distinct = self.accept_kw("DISTINCT")
         projections: List[ast.Expr] = []
         while True:
             if self.is_sym("*"):
@@ -294,18 +407,38 @@ class _Parser:
                     continue
                 break
         limit: Optional[int] = None
+        offset: Optional[int] = None
         if self.accept_kw("LIMIT"):
-            tok = self.next()
-            if tok.kind != "number" or not isinstance(tok.value, int):
-                raise SqlParseError("LIMIT requires an integer")
-            limit = tok.value
+            limit = self._parse_limit_expr()
+            if self.accept_sym(","):
+                # LIMIT n, m 逗号形式:第一个是 OFFSET,第二个是 LIMIT
+                offset = limit
+                limit = self._parse_limit_expr()
+            elif self.accept_kw("OFFSET"):
+                offset = self._parse_limit_expr()
+        elif self.is_kw("OFFSET"):
+            raise SqlParseError('near "OFFSET": syntax error (OFFSET requires LIMIT)')
         return ast.Select(
             projections=projections,
             table=table,
             where=where,
             order_by=order_by,
             limit=limit,
+            offset=offset,
+            distinct=distinct,
         )
+
+    def _parse_limit_expr(self) -> int:
+        """LIMIT/OFFSET 表达式(SQLite 允许表达式,如 LIMIT 2+1)。"""
+        expr = self._parse_expr()
+        # 静态求值:只支持不含列引用的常量表达式
+        try:
+            value = _const_eval(expr)
+        except SqlParseError:
+            raise
+        if not isinstance(value, (int, float)):
+            raise SqlParseError("LIMIT/OFFSET requires a numeric expression")
+        return int(value)
 
     def _is_projection_alias(self) -> bool:
         """投影别名(省略 AS):下一个 token 是标识符且不是子句关键字/排序方向。"""

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""生成 test/ 下 18 个验收夹具(子需求 1)。
+"""生成 test/ 下 25 个验收夹具(子需求 1 + 子需求 2)。
 
 口径:官方 sqllogictest(与 child[0] 同一 vendor commit)中的场景按本模块支持范围
 重构;每条 query 记录的期望值由 sqlite3 3.46.1 实际执行产出;statement error
 模式按本引擎的真实报错文本书写(运行器以 re.search 匹配)。
 
+子需求 1:types/cast/expr1-3/func1-5/like/in/null/collate1-5(18 文件)
+子需求 2:insert1/update1/delete1/select2-5(7 文件,DML + SELECT 进阶)
+
 用法:python3 tools/gen_fixtures.py
-输出:test/types.test test/cast.test test/expr1-3.test test/func1-5.test
-      test/like.test test/in.test test/null.test test/collate1-5.test
+输出:test/*.test(见上)
 同时更新 test/FIXTURES.md。
 """
 
@@ -980,6 +982,201 @@ def build_records():
     r.query("I", "SELECT a='a' AND b='Z' FROM t1 ORDER BY a")
     r.query("T", "SELECT a FROM t1 ORDER BY a LIMIT 3")
 
+    # ================= insert1.test(DML:INSERT 多行/缺省/NULL/亲和) =================
+    # 官方 insert1-5.test 场景重构:多行、DEFAULT VALUES、列清单、省略列、
+    # 显式 NULL、列级 DEFAULT、亲和转换、错误
+    r = new_file("insert1")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER, b TEXT, c REAL)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1, 'one', 1.5)")
+    r.stmt_ok("INSERT INTO t1 VALUES(2, 'two', 2.5), (3, 'three', 3.5)")
+    r.stmt_ok("INSERT INTO t1 DEFAULT VALUES")
+    r.stmt_ok("INSERT INTO t1(a) VALUES(4)")
+    r.stmt_ok("INSERT INTO t1(b, a) VALUES('four', 5)")
+    r.stmt_ok("INSERT INTO t1 VALUES(NULL, NULL, NULL)")
+    r.stmt_ok("INSERT INTO t1 VALUES('6', 6, '7')")
+    r.query("ITR", "SELECT a, b, c FROM t1")
+    r.query("TTT", "SELECT typeof(a), typeof(b), typeof(c) FROM t1 ORDER BY a")
+    # 列级 DEFAULT:省略列取 DEFAULT;显式 NULL 覆盖;DEFAULT 值按列亲和转换
+    r.stmt_ok("CREATE TABLE t2(a INTEGER DEFAULT 42, b TEXT DEFAULT 'x', c REAL DEFAULT 1.5, d)")
+    r.stmt_ok("INSERT INTO t2 DEFAULT VALUES")
+    r.stmt_ok("INSERT INTO t2(a) VALUES(7)")
+    r.stmt_ok("INSERT INTO t2(a, b) VALUES(8, NULL)")
+    r.stmt_ok("INSERT INTO t2(a, c, d) VALUES(9, 2.5, 'z')")
+    r.query("ITRT", "SELECT a, b, c, d FROM t2")
+    r.stmt_ok("CREATE TABLE t3(a INTEGER DEFAULT '42', b TEXT DEFAULT 7, c REAL DEFAULT '2.5')")
+    r.stmt_ok("INSERT INTO t3 DEFAULT VALUES")
+    r.query("TTT", "SELECT typeof(a), typeof(b), typeof(c) FROM t3")
+    # 错误
+    r.stmt_err("INSERT INTO t1 VALUES(1)", "INSERT has 1 values")
+    r.stmt_err("INSERT INTO t1 VALUES(1,2,3,4)", "INSERT has 4 values")
+    r.stmt_err("INSERT INTO nosuch VALUES(1)", "no such table")
+    r.stmt_err("INSERT INTO t1(z) VALUES(1)", "no such column")
+    r.stmt_err("INSERT INTO t1(a, a) VALUES(1, 2)", "duplicate column")
+
+    # ================= update1.test(官方 update1-3 场景:表达式/WHERE/亲和) =================
+    r = new_file("update1")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER, b TEXT)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1,'one'),(2,'two'),(3,'three'),(4,'four'),(5,'five')")
+    r.stmt_ok("UPDATE t1 SET b = b || '!'")
+    r.query("IT", "SELECT a, b FROM t1 ORDER BY a")
+    r.stmt_ok("UPDATE t1 SET a = a * 10 WHERE a <= 3")
+    r.query("IT", "SELECT a, b FROM t1 ORDER BY a")
+    r.stmt_ok("UPDATE t1 SET a = a + 1, b = 'x' WHERE b = 'two!'")
+    r.query("IT", "SELECT a, b FROM t1 ORDER BY a")
+    # 交换赋值:SET 表达式都基于原行
+    r.stmt_ok("UPDATE t1 SET a = b, b = a WHERE a = 40")
+    r.query("IT", "SELECT a, b FROM t1 ORDER BY a")
+    # 无匹配 UPDATE
+    r.stmt_ok("UPDATE t1 SET b = 'z' WHERE a = 999")
+    r.query("IT", "SELECT a, b FROM t1 ORDER BY a")
+    # 亲和转换:INTEGER 列赋 '3.9' → REAL 3.9
+    r.stmt_ok("CREATE TABLE t2(a INTEGER)")
+    r.stmt_ok("INSERT INTO t2 VALUES(1),(2)")
+    r.stmt_ok("UPDATE t2 SET a = '3.9'")
+    r.query("RT", "SELECT a, typeof(a) FROM t2 ORDER BY a")
+    # collation 参与 WHERE
+    r.stmt_ok("CREATE TABLE t3(a TEXT COLLATE NOCASE)")
+    r.stmt_ok("INSERT INTO t3 VALUES('abc'),('ABC'),('xyz')")
+    r.stmt_ok("UPDATE t3 SET a = 'matched' WHERE a = 'abc'")
+    r.query("T", "SELECT a FROM t3 ORDER BY a")
+    # 错误
+    r.stmt_err("UPDATE t1 SET z = 1", "no such column")
+    r.stmt_err("UPDATE nosuch SET a = 1", "no such table")
+
+    # ================= delete1.test(官方 delete1-4 场景:WHERE/全删) =================
+    r = new_file("delete1")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1),(2),(3),(4),(5)")
+    r.stmt_ok("DELETE FROM t1 WHERE a > 3")
+    r.query("I", "SELECT a FROM t1 ORDER BY a")
+    r.stmt_ok("DELETE FROM t1 WHERE a = 2")
+    r.query("I", "SELECT a FROM t1 ORDER BY a")
+    r.stmt_ok("DELETE FROM t1 WHERE a = 99")
+    r.query("I", "SELECT a FROM t1 ORDER BY a")
+    r.stmt_ok("DELETE FROM t1")
+    r.query("I", "SELECT a FROM t1")
+    r.stmt_err("DELETE FROM nosuch", "no such table")
+
+    # ================= select2.test(官方 select2 t1 数据,含 NULL;WHERE 谓词) =================
+    r = new_file("select2")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER, b INTEGER, c INTEGER, d INTEGER, e INTEGER)")
+    for ins in [
+        "INSERT INTO t1(e,c,b,d,a) VALUES(NULL,102,NULL,101,104)",
+        "INSERT INTO t1(a,c,d,e,b) VALUES(107,106,108,109,105)",
+        "INSERT INTO t1(e,d,b,a,c) VALUES(110,114,112,NULL,113)",
+        "INSERT INTO t1(d,c,e,a,b) VALUES(116,119,117,115,NULL)",
+        "INSERT INTO t1(c,d,b,e,a) VALUES(123,122,124,NULL,121)",
+        "INSERT INTO t1(a,d,b,e,c) VALUES(127,128,129,126,125)",
+        "INSERT INTO t1(e,c,a,d,b) VALUES(132,134,131,133,130)",
+        "INSERT INTO t1(a,d,b,e,c) VALUES(138,136,139,135,137)",
+        "INSERT INTO t1(e,c,d,a,b) VALUES(144,141,140,142,143)",
+        "INSERT INTO t1(b,a,e,d,c) VALUES(145,149,146,NULL,147)",
+        "INSERT INTO t1(b,c,a,d,e) VALUES(151,150,153,NULL,NULL)",
+        "INSERT INTO t1(c,e,a,d,b) VALUES(155,157,159,NULL,158)",
+        "INSERT INTO t1(c,b,a,d,e) VALUES(161,160,163,164,162)",
+        "INSERT INTO t1(b,d,a,e,c) VALUES(167,NULL,168,165,166)",
+        "INSERT INTO t1(d,b,c,e,a) VALUES(171,170,172,173,174)",
+        "INSERT INTO t1(e,c,a,d,b) VALUES(177,176,179,NULL,175)",
+        "INSERT INTO t1(b,e,a,d,c) VALUES(181,180,182,183,184)",
+        "INSERT INTO t1(c,a,b,e,d) VALUES(187,188,186,189,185)",
+        "INSERT INTO t1(d,b,c,e,a) VALUES(190,194,193,192,191)",
+        "INSERT INTO t1(a,e,b,d,c) VALUES(199,197,198,196,195)",
+        "INSERT INTO t1(b,c,d,a,e) VALUES(NULL,202,203,201,204)",
+        "INSERT INTO t1(c,e,a,b,d) VALUES(208,NULL,NULL,206,207)",
+        "INSERT INTO t1(c,e,a,d,b) VALUES(214,210,213,212,211)",
+        "INSERT INTO t1(b,c,a,d,e) VALUES(218,215,216,217,219)",
+        "INSERT INTO t1(b,e,d,a,c) VALUES(223,221,222,220,224)",
+        "INSERT INTO t1(d,e,b,a,c) VALUES(226,227,228,229,225)",
+        "INSERT INTO t1(a,c,b,e,d) VALUES(234,231,232,230,233)",
+        "INSERT INTO t1(e,b,a,c,d) VALUES(237,236,239,NULL,238)",
+        "INSERT INTO t1(e,c,b,a,d) VALUES(NULL,244,240,243,NULL)",
+        "INSERT INTO t1(e,d,c,b,a) VALUES(246,248,247,249,245)",
+    ]:
+        r.stmt_ok(ins)
+    r.query("I", "SELECT a FROM t1 ORDER BY a")
+    r.query("I", "SELECT a FROM t1 WHERE b IS NULL ORDER BY a")
+    r.query("I", "SELECT a FROM t1 WHERE a IS NOT NULL ORDER BY a")
+    r.query("I", "SELECT a FROM t1 WHERE c > 200 ORDER BY a")
+    r.query("I", "SELECT a FROM t1 WHERE b < a ORDER BY a")
+    r.query("II", "SELECT a, b FROM t1 WHERE a > 200 AND b > 200 ORDER BY a")
+    r.query("I", "SELECT a FROM t1 WHERE b IS NULL OR c IS NULL ORDER BY a")
+    r.query("I", "SELECT a FROM t1 ORDER BY a DESC LIMIT 5")
+    r.query("I", "SELECT a FROM t1 ORDER BY a LIMIT 5 OFFSET 10")
+    r.query("I", "SELECT a FROM t1 ORDER BY a LIMIT 10, 5")
+    r.query("I", "SELECT a FROM t1 WHERE b IS NULL ORDER BY a LIMIT 3")
+    r.query("I", "SELECT a FROM t1 ORDER BY a LIMIT -1 OFFSET 25")
+    r.query("I", "SELECT a FROM t1 ORDER BY a LIMIT 0")
+
+    # ================= select3.test(官方 select3 场景:DISTINCT) =================
+    r = new_file("select3")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER, b TEXT)")
+    r.stmt_ok("INSERT INTO t1 VALUES(1,'x'),(2,'y'),(1,'x'),(3,'z'),(2,'y'),(1,'w'),(NULL,'n'),(NULL,'n')")
+    r.query("I", "SELECT DISTINCT a FROM t1 ORDER BY a")
+    r.query("T", "SELECT DISTINCT b FROM t1 ORDER BY b")
+    r.query("IT", "SELECT DISTINCT a, b FROM t1 ORDER BY a, b")
+    r.query("I", "SELECT DISTINCT a FROM t1 WHERE a IS NOT NULL ORDER BY a")
+    r.query("I", "SELECT DISTINCT a FROM t1 ORDER BY a LIMIT 2")
+    r.query("T", "SELECT DISTINCT b FROM t1 ORDER BY b LIMIT 2 OFFSET 1")
+    r.query("I", "SELECT DISTINCT a+1 FROM t1 ORDER BY a+1")
+    r.query("T", "SELECT DISTINCT b FROM t1 ORDER BY b DESC")
+    # collation 参与 DISTINCT
+    r.stmt_ok("CREATE TABLE t2(a TEXT COLLATE NOCASE)")
+    r.stmt_ok("INSERT INTO t2 VALUES('a'),('A'),('b'),('B'),('a')")
+    r.query("T", "SELECT DISTINCT a FROM t2 ORDER BY a")
+    # int/float 数值视为相同
+    r.stmt_ok("CREATE TABLE t3(a)")
+    r.stmt_ok("INSERT INTO t3 VALUES(1),(1.0),(2),(2.0),(3)")
+    r.query("T", "SELECT DISTINCT a FROM t3 ORDER BY a")
+    # DISTINCT + WHERE + LIMIT/OFFSET
+    r.stmt_ok("CREATE TABLE t4(a INTEGER)")
+    r.stmt_ok("INSERT INTO t4 VALUES(1),(2),(1),(3),(2),(4),(5),(3)")
+    r.query("I", "SELECT DISTINCT a FROM t4 WHERE a >= 2 ORDER BY a LIMIT 2")
+    r.query("I", "SELECT DISTINCT a FROM t4 WHERE a >= 2 ORDER BY a LIMIT 2 OFFSET 1")
+
+    # ================= select4.test(官方 select4 场景:ORDER BY collation/LIMIT) =================
+    r = new_file("select4")
+    r.stmt_ok("CREATE TABLE t1(a1 INTEGER, a2 INTEGER, a3 INTEGER, a4 INTEGER, a5 INTEGER)")
+    r.stmt_ok("INSERT INTO t1 VALUES(5,4,3,2,1),(1,2,3,4,5),(3,3,3,3,3),(2,4,1,5,3),(4,1,5,2,3)")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 DESC")
+    r.query("II", "SELECT a1, a2 FROM t1 ORDER BY a1, a2")
+    r.query("II", "SELECT a1, a2 FROM t1 ORDER BY a2, a1")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 LIMIT 2")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 LIMIT 2 OFFSET 2")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 DESC LIMIT 3")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 LIMIT -1 OFFSET 1")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 LIMIT 0")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 LIMIT 2+2")
+    r.query("I", "SELECT a1 FROM t1 ORDER BY a1 LIMIT 2, 3")
+    # 文本 collation 排序
+    r.stmt_ok("CREATE TABLE t2(a TEXT COLLATE NOCASE, b TEXT COLLATE BINARY)")
+    r.stmt_ok("INSERT INTO t2 VALUES('apple','Z'),('Apple','y'),('banana','X'),('BANANA','w'),('cherry','v')")
+    r.query("T", "SELECT a FROM t2 ORDER BY a")
+    r.query("T", "SELECT a FROM t2 ORDER BY a COLLATE BINARY")
+    r.query("T", "SELECT a FROM t2 ORDER BY a DESC")
+    r.query("T", "SELECT b FROM t2 ORDER BY b")
+    r.query("T", "SELECT a FROM t2 ORDER BY a LIMIT 2 OFFSET 1")
+    r.query("T", "SELECT DISTINCT a FROM t2 ORDER BY a")
+
+    # ================= select5.test(官方 select5 为全连接 → 重构单表组合) =================
+    r = new_file("select5")
+    r.stmt_ok("CREATE TABLE t1(a INTEGER, b TEXT)")
+    r.stmt_ok("INSERT INTO t1 VALUES(3,'c'),(1,'a'),(2,'b'),(1,'a'),(3,'d'),(2,'b'),(1,'e')")
+    r.query("I", "SELECT DISTINCT a FROM t1 WHERE b >= 'b' ORDER BY a LIMIT 2")
+    r.query("IT", "SELECT a, b FROM t1 WHERE a >= 2 ORDER BY a DESC, b LIMIT 3")
+    r.query("IT", "SELECT DISTINCT a, b FROM t1 ORDER BY a, b LIMIT 3 OFFSET 1")
+    r.query("T", "SELECT DISTINCT b FROM t1 WHERE a = 1 ORDER BY b")
+    r.query("I", "SELECT a FROM t1 ORDER BY a LIMIT 2, 3")
+    r.query("I", "SELECT DISTINCT a FROM t1 ORDER BY a LIMIT -1 OFFSET 1")
+    r.query("I", "SELECT a FROM t1 WHERE b LIKE 'a%' OR b LIKE 'e%' ORDER BY a")
+    r.query("I", "SELECT a FROM t1 WHERE a BETWEEN 1 AND 2 ORDER BY a")
+    r.query("T", "SELECT DISTINCT b FROM t1 ORDER BY b DESC LIMIT 2")
+    # 常量投影 + LIMIT/OFFSET/DISTINCT
+    r.query("II", "SELECT 1, 2 LIMIT 1")
+    r.query("II", "SELECT DISTINCT 1, 2")
+    r.query("I", "SELECT 1 WHERE 1 LIMIT 0")
+    r.query("I", "SELECT 1 WHERE 0 LIMIT 1")
+
     for fb in files.values():
         fb.close()
     return files
@@ -992,6 +1189,8 @@ def main():
         "types", "cast", "expr1", "expr2", "expr3", "func1", "func2", "func3",
         "func4", "func5", "like", "in", "null", "collate1", "collate2",
         "collate3", "collate4", "collate5",
+        "insert1", "update1", "delete1", "select2", "select3", "select4",
+        "select5",
     ]
     for name in order:
         fb = files[name]

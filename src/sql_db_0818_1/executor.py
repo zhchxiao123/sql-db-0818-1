@@ -98,6 +98,12 @@ def execute(db: Database, stmt: ast.Statement):
     if isinstance(stmt, ast.Insert):
         _exec_insert(db, stmt)
         return None
+    if isinstance(stmt, ast.Update):
+        _exec_update(db, stmt)
+        return None
+    if isinstance(stmt, ast.Delete):
+        _exec_delete(db, stmt)
+        return None
     if isinstance(stmt, ast.Select):
         return _exec_select(db, stmt)
     raise SqlError(f"unsupported statement {type(stmt).__name__}")
@@ -110,17 +116,65 @@ def _exec_create(db: Database, stmt: ast.CreateTable) -> None:
         if coll not in (COLL_BINARY, COLL_NOCASE, COLL_RTRIM):
             raise SqlError(f"no such collation sequence: {coll}")
         columns.append(
-            Column(name=c.name, type_name=c.type_name, affinity=c.affinity, collation=coll)
+            Column(
+                name=c.name,
+                type_name=c.type_name,
+                affinity=c.affinity,
+                collation=coll,
+                default=c.default,
+            )
         )
     db.create_table(stmt.table, columns)
 
 
 def _exec_insert(db: Database, stmt: ast.Insert) -> None:
+    if stmt.default_values:
+        # INSERT INTO t DEFAULT VALUES → 单行,所有列取 DEFAULT/NULL
+        db.insert(stmt.table, [], [[]])
+        return
     rows: List[List[Value]] = []
     for row in stmt.rows:
         values: List[Value] = [_eval_expr(None, [], e) for e in row]
         rows.append(values)
     db.insert(stmt.table, stmt.columns, rows)
+
+
+def _exec_update(db: Database, stmt: ast.Update) -> None:
+    """UPDATE t SET col=expr, ... WHERE cond。
+
+    SQLite 语义:所有 SET 表达式对【原行】求值,然后再统一应用(交换赋值
+    SET a=b, b=a 成立);WHERE 过滤原行。
+    """
+    table = db.get_table(stmt.table)
+    cols = table.columns
+    # 先解析目标列,确保列存在
+    target_indexes = [table.column_index(col) for col, _ in stmt.assignments]
+    new_rows: List[List[Value]] = []
+    for raw in table.rows:
+        if stmt.where is not None:
+            cond = _eval_expr(cols, raw, stmt.where)
+            if not _is_true(cond):
+                new_rows.append(raw)
+                continue
+        updated = list(raw)
+        # 所有表达式对原行求值
+        new_values = [_eval_expr(cols, raw, expr) for _col, expr in stmt.assignments]
+        for idx, val in zip(target_indexes, new_values):
+            updated[idx] = apply_affinity(val, cols[idx].affinity)
+        new_rows.append(updated)
+    table.rows = new_rows
+
+
+def _exec_delete(db: Database, stmt: ast.Delete) -> None:
+    """DELETE FROM t WHERE cond;无 WHERE → 全删。"""
+    table = db.get_table(stmt.table)
+    cols = table.columns
+    if stmt.where is None:
+        table.rows = []
+        return
+    table.rows = [
+        raw for raw in table.rows if not _is_true(_eval_expr(cols, raw, stmt.where))
+    ]
 
 
 # ---------------------------------------------------------------- 求值上下文
@@ -951,6 +1005,38 @@ def _printf_one(spec: str, flags: str, width: str, prec: str, val: Value) -> str
 
 
 # ---------------------------------------------------------------- SELECT
+def _rows_equal(a: List[Value], b: List[Value], colls: List[str]) -> bool:
+    """DISTINCT 行相等:逐列比较;NULL==NULL;数值 1 与 1.0 相等;
+    文本按表达式 collation(NOCASE 下 'a'=='A')。"""
+    if len(a) != len(b):
+        return False
+    for x, y, coll in zip(a, b, colls):
+        if x is None and y is None:
+            continue
+        if x is None or y is None:
+            return False
+        if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+            if float(x) != float(y):
+                return False
+            continue
+        if compare_values(x, y, coll) != 0:
+            return False
+    return True
+
+
+def _dedup_rows(
+    matched: List[tuple], cols: List[Column], projections: List[ast.Expr]
+) -> List[tuple]:
+    """SELECT DISTINCT 去重:保留首个匹配行,文本比较按各投影的 collation。"""
+    colls = [_order_collation(cols, p) for p in projections]
+    result: List[tuple] = []
+    for raw, proj in matched:
+        if any(_rows_equal(proj, p2, colls) for _r2, p2 in result):
+            continue
+        result.append((raw, proj))
+    return result
+
+
 def _exec_select(db: Database, stmt: ast.Select) -> QueryResult:
     # 无 FROM:常量投影,单行;但 WHERE 仍参与过滤(SELECT 1 WHERE 0 → 空)
     if stmt.table is None:
@@ -959,7 +1045,24 @@ def _exec_select(db: Database, stmt: ast.Select) -> QueryResult:
             cond = _eval_expr(None, [], stmt.where)
             if not _is_true(cond):
                 return QueryResult(rows=[])
-        return QueryResult(rows=[row])
+        rows = [row]
+        if stmt.distinct:
+            seen: List[List[Value]] = []
+            dedup: List[List[Value]] = []
+            colls = [COLL_BINARY for _ in stmt.projections]
+            for r in rows:
+                if any(_rows_equal(r, s, colls) for s in seen):
+                    continue
+                seen.append(r)
+                dedup.append(r)
+            rows = dedup
+        if stmt.limit is not None or stmt.offset is not None:
+            start = stmt.offset if stmt.offset is not None and stmt.offset > 0 else 0
+            if stmt.limit is not None and stmt.limit >= 0:
+                rows = rows[start : start + stmt.limit]
+            else:
+                rows = rows[start:]
+        return QueryResult(rows=rows)
 
     table = db.get_table(stmt.table)
     cols = table.columns
@@ -988,16 +1091,22 @@ def _exec_select(db: Database, stmt: ast.Select) -> QueryResult:
         projected = [_eval_expr(cols, raw, p) for p in projections]
         matched.append((raw, projected))
 
+    # SELECT DISTINCT:对投影结果去重(NULL 视为相等;文本按 collation);保留首个原始行
+    if stmt.distinct:
+        matched = _dedup_rows(matched, cols, projections)
+
     if stmt.order_by:
         matched = _sort_rows(matched, stmt.order_by, cols)
 
     rows = [proj for _raw, proj in matched]
 
-    if stmt.limit is not None:
-        if stmt.limit < 0:
-            pass  # SQLite:LIMIT -1 表示不限制
+    # LIMIT n OFFSET m;LIMIT -1 = 不限制;OFFSET 负值按 0
+    if stmt.limit is not None or stmt.offset is not None:
+        start = stmt.offset if stmt.offset is not None and stmt.offset > 0 else 0
+        if stmt.limit is not None and stmt.limit >= 0:
+            rows = rows[start : start + stmt.limit]
         else:
-            rows = rows[: stmt.limit]
+            rows = rows[start:]
 
     return QueryResult(rows=rows)
 
