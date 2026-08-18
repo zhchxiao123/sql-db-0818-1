@@ -1,0 +1,39 @@
+# create.test — CREATE TABLE 基础形态(列定义+类型)
+#
+# 覆盖验收 a6:CREATE TABLE(列定义+类型),含 INTEGER/TEXT/REAL/
+# NUMERIC/BLOB 各亲和与 VARCHAR(n) 类型名;建表后 INSERT+SELECT 验证。
+# 期望值由 sqlite3 3.46.1 实际执行产出。
+
+statement ok
+CREATE TABLE t1(a INTEGER, b TEXT, c REAL)
+
+statement ok
+CREATE TABLE t2(id INTEGER, name VARCHAR(10))
+
+statement ok
+CREATE TABLE t3(x NUMERIC, y BLOB)
+
+statement ok
+INSERT INTO t1 VALUES(1, 'one', 1.5)
+
+statement ok
+INSERT INTO t2 VALUES(10, 'ten')
+
+statement ok
+INSERT INTO t3 VALUES(2.5, X'0102')
+
+query I rowsort
+SELECT a FROM t1
+----
+1
+
+query I rowsort
+SELECT id FROM t2
+----
+10
+
+query R rowsort
+SELECT x FROM t3
+----
+2.500
+

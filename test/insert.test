@@ -1,0 +1,34 @@
+# insert.test — INSERT(整行/多行/列清单)
+#
+# 覆盖验收 a6:INSERT 整行、多行 VALUES、列清单 + 亲和转换。
+# 期望值由 sqlite3 3.46.1 实际执行产出。
+
+statement ok
+CREATE TABLE t(a INTEGER, b TEXT)
+
+statement ok
+INSERT INTO t VALUES(1, 'x')
+
+statement ok
+INSERT INTO t VALUES(2, 'y'), (3, 'z')
+
+statement ok
+INSERT INTO t(b, a) VALUES('w', 4)
+
+statement ok
+INSERT INTO t(a) VALUES(5)
+
+query IT rowsort
+SELECT a, b FROM t
+----
+1
+x
+2
+y
+3
+z
+4
+w
+5
+NULL
+
