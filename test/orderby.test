@@ -1,0 +1,65 @@
+# orderby.test — ORDER BY
+#
+# 覆盖验收 a6:ORDER BY 列名/序号、ASC/DESC。
+# 期望值由 sqlite3 3.46.1 实际执行产出。
+
+statement ok
+CREATE TABLE t(a INTEGER, b TEXT)
+
+statement ok
+INSERT INTO t VALUES(3,'c'),(1,'a'),(2,'b'),(5,'e'),(4,'d')
+
+query I nosort
+SELECT a FROM t ORDER BY a
+----
+1
+2
+3
+4
+5
+
+query I nosort
+SELECT a FROM t ORDER BY a DESC
+----
+5
+4
+3
+2
+1
+
+query I nosort
+SELECT a FROM t ORDER BY b
+----
+1
+2
+3
+4
+5
+
+query I nosort
+SELECT a FROM t ORDER BY 1
+----
+1
+2
+3
+4
+5
+
+query I nosort
+SELECT a FROM t ORDER BY b DESC
+----
+5
+4
+3
+2
+1
+
+query T nosort
+SELECT b FROM t ORDER BY a
+----
+a
+b
+c
+d
+e
+
