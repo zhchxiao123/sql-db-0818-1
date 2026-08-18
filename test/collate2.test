@@ -1,0 +1,128 @@
+statement ok
+CREATE TABLE t1(x TEXT COLLATE NOCASE)
+
+statement ok
+INSERT INTO t1 VALUES('apple'),('Apple'),('APPLE'),('banana'),('Banana'),('cherry'),('Cherry')
+
+query T
+SELECT x FROM t1 ORDER BY x
+----
+apple
+Apple
+APPLE
+banana
+Banana
+cherry
+Cherry
+
+query T
+SELECT x FROM t1 ORDER BY x COLLATE BINARY
+----
+APPLE
+Apple
+Banana
+Cherry
+apple
+banana
+cherry
+
+query T
+SELECT x FROM t1 ORDER BY x COLLATE NOCASE
+----
+apple
+Apple
+APPLE
+banana
+Banana
+cherry
+Cherry
+
+query T
+SELECT x FROM t1 ORDER BY x DESC
+----
+cherry
+Cherry
+banana
+Banana
+apple
+Apple
+APPLE
+
+query I
+SELECT x='apple' FROM t1 ORDER BY x COLLATE NOCASE
+----
+1
+1
+1
+0
+0
+0
+0
+
+query I
+SELECT x='APPLE' FROM t1 ORDER BY x COLLATE BINARY
+----
+1
+1
+0
+0
+1
+0
+0
+
+query I
+SELECT x='apple' FROM t1 ORDER BY x COLLATE NOCASE
+----
+1
+1
+1
+0
+0
+0
+0
+
+query I
+SELECT x='APPLE' FROM t1 ORDER BY x COLLATE BINARY
+----
+1
+1
+0
+0
+1
+0
+0
+
+statement ok
+CREATE TABLE t2(a TEXT COLLATE NOCASE, b TEXT COLLATE BINARY)
+
+statement ok
+INSERT INTO t2 VALUES('one','one'),('One','One'),('ONE','ONE')
+
+query I
+SELECT a=b FROM t2 ORDER BY a
+----
+1
+1
+1
+
+query I
+SELECT a=b COLLATE NOCASE FROM t2 ORDER BY a
+----
+1
+1
+1
+
+query I
+SELECT a<b FROM t2 ORDER BY a
+----
+0
+0
+0
+
+query I
+SELECT a>b FROM t2 ORDER BY a
+----
+0
+0
+0
+

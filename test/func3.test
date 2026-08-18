@@ -1,0 +1,192 @@
+query T
+SELECT min('b', 'a')
+----
+a
+
+query T
+SELECT max('b', 'a')
+----
+b
+
+query I
+SELECT min(3, 1, 2)
+----
+1
+
+query I
+SELECT max(3, 1, 2)
+----
+3
+
+query I
+SELECT min(1, '2')
+----
+1
+
+query T
+SELECT max(1, '2')
+----
+2
+
+query I
+SELECT min(1, 2.5)
+----
+1
+
+query R
+SELECT max(1, 2.5)
+----
+2.500
+
+query T
+SELECT min('10', '9')
+----
+10
+
+query I
+SELECT min(3)
+----
+3
+
+query I
+SELECT max(3)
+----
+3
+
+query I
+SELECT min(NULL, 1)
+----
+NULL
+
+query I
+SELECT max(NULL, 1)
+----
+NULL
+
+query T
+SELECT replace('abc', 'b', 'B')
+----
+aBc
+
+query T
+SELECT replace('abc', '', 'x')
+----
+abc
+
+query T
+SELECT replace('aabbcc', 'b', 'X')
+----
+aaXXcc
+
+query T
+SELECT replace('abc', 'z', 'Y')
+----
+abc
+
+query T
+SELECT replace(NULL, 'a', 'b')
+----
+NULL
+
+query T
+SELECT replace('abc', NULL, 'x')
+----
+NULL
+
+query T
+SELECT replace('abc', 'a', NULL)
+----
+NULL
+
+query I
+SELECT instr('abc', 'b')
+----
+2
+
+query I
+SELECT instr('abc', '')
+----
+1
+
+query I
+SELECT instr('', 'a')
+----
+0
+
+query I
+SELECT instr('abc', 'abc')
+----
+1
+
+query I
+SELECT instr('abc', 'z')
+----
+0
+
+query I
+SELECT instr(NULL, 'a')
+----
+NULL
+
+query I
+SELECT instr('abc', NULL)
+----
+NULL
+
+query T
+SELECT trim('  ab  ')
+----
+ab
+
+query T
+SELECT ltrim('  ab  ')
+----
+ab  
+
+query T
+SELECT rtrim('  ab  ')
+----
+  ab
+
+query T
+SELECT trim('xxabxx', 'x')
+----
+ab
+
+query T
+SELECT ltrim('abc', 'ab')
+----
+c
+
+query T
+SELECT rtrim('abc', 'bc')
+----
+a
+
+query T
+SELECT trim('abc')
+----
+abc
+
+query T
+SELECT trim(NULL)
+----
+NULL
+
+query T
+SELECT ltrim('xyxyab', 'xy')
+----
+ab
+
+statement error wrong number of arguments
+SELECT min()
+
+statement error wrong number of arguments
+SELECT instr('a')
+
+statement error wrong number of arguments
+SELECT replace('a','b')
+
+statement error no such function
+SELECT no_such_func(1)
+

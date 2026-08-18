@@ -1,0 +1,175 @@
+statement ok
+CREATE TABLE t1(a TEXT, b TEXT COLLATE NOCASE, c TEXT COLLATE RTRIM)
+
+statement ok
+INSERT INTO t1 VALUES('abc','ABC','x  '),('ABD','abd','x'),('abc','aBc','x '),('b','B','y')
+
+query T
+SELECT a FROM t1 ORDER BY a
+----
+ABD
+abc
+abc
+b
+
+query T
+SELECT a FROM t1 ORDER BY a COLLATE BINARY
+----
+ABD
+abc
+abc
+b
+
+query T
+SELECT a FROM t1 ORDER BY a COLLATE NOCASE
+----
+abc
+abc
+ABD
+b
+
+query I
+SELECT a='abc' FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query I
+SELECT a='ABC' FROM t1 ORDER BY a
+----
+0
+0
+0
+0
+
+query I
+SELECT a='abc' COLLATE NOCASE FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query I
+SELECT a COLLATE NOCASE='ABC' FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query I
+SELECT 'abc'=a FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query I
+SELECT 'ABC'=a COLLATE NOCASE FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query T
+SELECT b FROM t1 ORDER BY b
+----
+ABC
+aBc
+abd
+B
+
+query T
+SELECT b FROM t1 ORDER BY b COLLATE BINARY
+----
+ABC
+B
+aBc
+abd
+
+query I
+SELECT b='abc' FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query I
+SELECT b='ABC' FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query I
+SELECT 'abc'=b FROM t1 ORDER BY a
+----
+0
+1
+1
+0
+
+query T
+SELECT c FROM t1 ORDER BY c
+----
+x  
+x
+x 
+y
+
+query T
+SELECT c FROM t1 ORDER BY c COLLATE BINARY
+----
+x
+x 
+x  
+y
+
+query I
+SELECT c='x' FROM t1 ORDER BY a
+----
+1
+1
+1
+0
+
+query I
+SELECT 'x'=c FROM t1 ORDER BY a
+----
+1
+1
+1
+0
+
+query I
+SELECT 'ABC' < 'abc' COLLATE NOCASE
+----
+0
+
+query I
+SELECT 'ABC' < 'abc' COLLATE BINARY
+----
+1
+
+query I
+SELECT 'A' < 'a' COLLATE NOCASE
+----
+0
+
+query I
+SELECT 'B' > 'a' COLLATE NOCASE
+----
+1
+
+query I
+SELECT 'a' < 'B' COLLATE BINARY
+----
+0
+

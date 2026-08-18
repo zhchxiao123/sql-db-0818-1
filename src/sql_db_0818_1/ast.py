@@ -1,16 +1,18 @@
 """SQL AST 定义。
 
-覆盖 CREATE TABLE / INSERT / SELECT 以及最小内核需要的表达式:
-字面量、列引用、比较(= != <> < <= > >=)、布尔组合(AND/OR/NOT)。
+覆盖 CREATE TABLE / INSERT / SELECT 以及子需求 1 的表达式系统:
+字面量、列引用、算术(+ - * / % ||)、比较(= != <> < <= > >= IS IS NOT)、
+布尔组合(AND/OR/NOT)、ISNULL/NOTNULL、CAST、标量函数、LIKE/GLOB、IN、
+BETWEEN、CASE、COLLATE 后缀。
 
-范围外特性(连接、聚合、子查询、函数、索引、事务、视图、触发器、DISTINCT、
-CASE、LIKE、IN、BETWEEN、CAST)不在此处建模。
+范围外特性(连接、子查询、聚合、索引、事务、视图、触发器、DISTINCT、
+UPDATE/DELETE)不在此处建模。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 Number = Union[int, float]
 Value = Union[Number, str, bytes, None]  # None 表示 NULL;bytes 表示 BLOB
@@ -33,7 +35,7 @@ class ColumnRef(Expr):
 
 @dataclass
 class BinaryOp(Expr):
-    op: str  # = != <> < <= > >= AND OR
+    op: str  # = != <> < <= > >= IS IS NOT + - * / % || AND OR
     left: Expr
     right: Expr
 
@@ -42,6 +44,62 @@ class BinaryOp(Expr):
 class UnaryOp(Expr):
     op: str  # '-' | '+' | 'NOT'
     operand: Expr
+
+
+@dataclass
+class Cast(Expr):
+    expr: Expr
+    type_name: str  # 原始类型名,如 INTEGER / TEXT
+    affinity: str  # 'INTEGER' | 'REAL' | 'TEXT' | 'BLOB' | 'NUMERIC'
+
+
+@dataclass
+class FuncCall(Expr):
+    name: str  # 已归一化为大写
+    args: List[Expr] = field(default_factory=list)
+
+
+@dataclass
+class Like(Expr):
+    expr: Expr
+    pattern: Expr
+    escape: Optional[Expr] = None
+    negated: bool = False  # NOT LIKE
+
+
+@dataclass
+class Glob(Expr):
+    expr: Expr
+    pattern: Expr
+    negated: bool = False  # NOT GLOB
+
+
+@dataclass
+class InList(Expr):
+    expr: Expr
+    items: List[Expr] = field(default_factory=list)
+    negated: bool = False  # NOT IN
+
+
+@dataclass
+class Between(Expr):
+    expr: Expr
+    low: Expr
+    high: Expr
+    negated: bool = False  # NOT BETWEEN
+
+
+@dataclass
+class Case(Expr):
+    base: Optional[Expr]  # None = 搜索形式(CASE WHEN ...)
+    whens: List[Tuple[Expr, Expr]] = field(default_factory=list)  # (条件, 结果)
+    else_expr: Optional[Expr] = None
+
+
+@dataclass
+class Collate(Expr):
+    expr: Expr
+    collation: str  # 已归一化为大写:BINARY / NOCASE / RTRIM / 自定义名
 
 
 # ---------------------------------------------------------------- 语句
@@ -54,6 +112,7 @@ class ColumnDef:
     name: str  # 已归一化为大写
     type_name: str  # 原始类型名,如 INTEGER / VARCHAR(10)
     affinity: str  # 'INTEGER' | 'REAL' | 'TEXT' | 'BLOB' | 'NUMERIC' | 'NONE'
+    collation: str = "BINARY"  # 列级 COLLATE,默认 BINARY
 
 
 @dataclass
@@ -71,7 +130,7 @@ class Insert(Statement):
 
 @dataclass
 class OrderItem:
-    expr: Expr  # 列引用或序号(ORDINAL)
+    expr: Expr  # 表达式或序号(ORDINAL 字面量)
     desc: bool = False
 
 

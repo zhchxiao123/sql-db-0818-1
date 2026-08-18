@@ -1,0 +1,140 @@
+query T
+SELECT printf('%d-%s', 42, 'x')
+----
+42-x
+
+query T
+SELECT printf('%.2f', 3.14159)
+----
+3.14
+
+query T
+SELECT printf('%s', 'hello')
+----
+hello
+
+query T
+SELECT printf('%05d', 42)
+----
+00042
+
+query T
+SELECT printf('%-5d|', 42)
+----
+42   |
+
+query T
+SELECT printf('%5s|', 'ab')
+----
+   ab|
+
+query T
+SELECT printf('%x', 255)
+----
+ff
+
+query T
+SELECT printf('%X', 255)
+----
+FF
+
+query T
+SELECT printf('%c', 65)
+----
+6
+
+query T
+SELECT printf('100%%')
+----
+100%
+
+query T
+SELECT printf('%d', 3.9)
+----
+3
+
+query T
+SELECT printf('%s', 1.5)
+----
+1.5
+
+query T
+SELECT printf('%s', 1e10)
+----
+10000000000.0
+
+query T
+SELECT printf('%f', 1.5)
+----
+1.500000
+
+query T
+SELECT printf('%d+%d=%d', 1, 2, 3)
+----
+1+2=3
+
+query T
+SELECT printf('%q', 'it''s')
+----
+it''s
+
+query T
+SELECT printf('%q', 'a''b''c')
+----
+a''b''c
+
+query I
+SELECT like('a%', 'abc')
+----
+1
+
+query I
+SELECT like('%z', 'abc')
+----
+0
+
+query I
+SELECT like('A%', 'abc')
+----
+1
+
+query I
+SELECT like('a_c', 'abc')
+----
+1
+
+query I
+SELECT glob('a*', 'abc')
+----
+1
+
+query I
+SELECT glob('A*', 'abc')
+----
+0
+
+query I
+SELECT glob('a?c', 'abc')
+----
+1
+
+query I
+SELECT glob('a[bc]c', 'abc')
+----
+1
+
+query I
+SELECT like(NULL, 'abc')
+----
+NULL
+
+query I
+SELECT like('a%', NULL)
+----
+NULL
+
+query I
+SELECT glob(NULL, 'abc')
+----
+NULL
+

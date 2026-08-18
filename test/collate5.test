@@ -1,0 +1,160 @@
+statement ok
+CREATE TABLE t1(a TEXT COLLATE NOCASE, b TEXT COLLATE BINARY)
+
+statement ok
+INSERT INTO t1 VALUES('a','Z'),('A','y'),('b','X'),('B','w'),('c','v')
+
+query TT
+SELECT a, b FROM t1 ORDER BY a
+----
+a
+Z
+A
+y
+b
+X
+B
+w
+c
+v
+
+query TT
+SELECT a, b FROM t1 ORDER BY a, b
+----
+a
+Z
+A
+y
+b
+X
+B
+w
+c
+v
+
+query TT
+SELECT a, b FROM t1 ORDER BY b, a
+----
+b
+X
+a
+Z
+c
+v
+B
+w
+A
+y
+
+query TT
+SELECT a, b FROM t1 ORDER BY a COLLATE BINARY
+----
+A
+y
+B
+w
+a
+Z
+b
+X
+c
+v
+
+query TT
+SELECT a, b FROM t1 ORDER BY a DESC
+----
+c
+v
+b
+X
+B
+w
+a
+Z
+A
+y
+
+query TT
+SELECT a, b FROM t1 ORDER BY b DESC, a
+----
+A
+y
+B
+w
+c
+v
+a
+Z
+b
+X
+
+query T
+SELECT b FROM t1 ORDER BY b COLLATE NOCASE
+----
+v
+w
+X
+y
+Z
+
+query I
+SELECT a=b FROM t1 ORDER BY a
+----
+0
+0
+0
+0
+0
+
+query I
+SELECT a=b COLLATE BINARY FROM t1 ORDER BY a
+----
+0
+0
+0
+0
+0
+
+query I
+SELECT a=b COLLATE NOCASE FROM t1 ORDER BY a
+----
+0
+0
+0
+0
+0
+
+query I
+SELECT a='a' FROM t1 ORDER BY a
+----
+1
+1
+0
+0
+0
+
+query I
+SELECT b='Z' FROM t1 ORDER BY a
+----
+1
+0
+0
+0
+0
+
+query I
+SELECT a='a' AND b='Z' FROM t1 ORDER BY a
+----
+1
+0
+0
+0
+0
+
+query T
+SELECT a FROM t1 ORDER BY a LIMIT 3
+----
+a
+A
+b
+

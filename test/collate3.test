@@ -1,0 +1,91 @@
+statement ok
+CREATE TABLE t1(a TEXT COLLATE RTRIM)
+
+statement ok
+INSERT INTO t1 VALUES('abc'),('abc '),('abc  '),(' abc'),('x'),('x ')
+
+query T
+SELECT a FROM t1 ORDER BY a
+----
+ abc
+abc
+abc 
+abc  
+x
+x 
+
+query T
+SELECT a FROM t1 ORDER BY a COLLATE BINARY
+----
+ abc
+abc
+abc 
+abc  
+x
+x 
+
+query T
+SELECT a FROM t1 ORDER BY a COLLATE RTRIM
+----
+ abc
+abc
+abc 
+abc  
+x
+x 
+
+query I
+SELECT a='abc' FROM t1 ORDER BY a COLLATE RTRIM
+----
+0
+1
+1
+1
+0
+0
+
+query I
+SELECT a='abc' FROM t1 ORDER BY a COLLATE BINARY
+----
+0
+1
+1
+1
+0
+0
+
+query I
+SELECT a='abc ' FROM t1 ORDER BY a COLLATE RTRIM
+----
+0
+1
+1
+1
+0
+0
+
+query I
+SELECT '  abc' = 'abc' COLLATE RTRIM
+----
+0
+
+query I
+SELECT 'a b' = 'a b ' COLLATE RTRIM
+----
+1
+
+query I
+SELECT 'abc  ' = 'abc' COLLATE RTRIM
+----
+1
+
+query I
+SELECT 'abc' = 'abc ' COLLATE RTRIM
+----
+1
+
+query I
+SELECT ' abc' = 'abc' COLLATE RTRIM
+----
+0
+

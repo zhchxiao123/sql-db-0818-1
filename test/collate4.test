@@ -1,0 +1,98 @@
+query I
+SELECT 'a' || 'b' COLLATE NOCASE = 'AB'
+----
+1
+
+query I
+SELECT 'abc' COLLATE NOCASE = 'ABC'
+----
+1
+
+query I
+SELECT 'abc' COLLATE BINARY = 'ABC'
+----
+0
+
+query I
+SELECT 'abc' COLLATE NOCASE < 'ABD'
+----
+1
+
+query I
+SELECT 'abc' COLLATE BINARY < 'ABD'
+----
+0
+
+query I
+SELECT 'b' BETWEEN 'A' AND 'C' COLLATE NOCASE
+----
+1
+
+query I
+SELECT 'B' BETWEEN 'a' AND 'c' COLLATE NOCASE
+----
+0
+
+query I
+SELECT 'ABC' IN ('abc','def') COLLATE NOCASE
+----
+0
+
+query I
+SELECT 'abc' IN ('abc','def')
+----
+1
+
+query I
+SELECT 'ABC' IN ('abc','def')
+----
+0
+
+statement ok
+CREATE TABLE t1(a TEXT, b TEXT COLLATE NOCASE)
+
+statement ok
+INSERT INTO t1 VALUES('abc','ABC'),('ABD','abd'),('abc','aBc')
+
+query T
+SELECT a || b FROM t1 ORDER BY a
+----
+ABDabd
+abcABC
+abcaBc
+
+query I
+SELECT a = b FROM t1 ORDER BY a
+----
+0
+0
+0
+
+query I
+SELECT a = b COLLATE NOCASE FROM t1 ORDER BY a
+----
+1
+1
+1
+
+query I
+SELECT a COLLATE NOCASE = b FROM t1 ORDER BY a
+----
+1
+1
+1
+
+query I
+SELECT (a COLLATE NOCASE) = b FROM t1 ORDER BY a
+----
+1
+1
+1
+
+query T
+SELECT a FROM t1 ORDER BY a || b
+----
+ABD
+abc
+abc
+
