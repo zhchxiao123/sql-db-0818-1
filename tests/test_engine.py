@@ -518,5 +518,188 @@ class CreateNoTypeTest(unittest.TestCase):
         self.assertEqual(r.rows, [[1, "x"], [2, "y"]])
 
 
+class DmlTest(unittest.TestCase):
+    def test_insert_default_values(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b TEXT DEFAULT 'x', c REAL DEFAULT 1.5)"))
+        execute(db, parse("INSERT INTO t DEFAULT VALUES"))
+        r = execute(db, parse("SELECT * FROM t"))
+        self.assertEqual(r.rows, [[None, "x", 1.5]])
+
+    def test_insert_default_with_affinity(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER DEFAULT '42', b TEXT DEFAULT 7)"))
+        execute(db, parse("INSERT INTO t DEFAULT VALUES"))
+        r = execute(db, parse("SELECT typeof(a), typeof(b) FROM t"))
+        self.assertEqual(r.rows, [["integer", "text"]])
+
+    def test_insert_omitted_column_uses_default(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b TEXT DEFAULT 'd')"))
+        execute(db, parse("INSERT INTO t(a) VALUES(1)"))
+        execute(db, parse("INSERT INTO t(a, b) VALUES(2, NULL)"))  # 显式 NULL 覆盖缺省
+        r = execute(db, parse("SELECT a, b FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[1, "d"], [2, None]])
+
+    def test_update_where(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b TEXT)"))
+        execute(db, parse("INSERT INTO t VALUES(1,'x'),(2,'y'),(3,'z')"))
+        execute(db, parse("UPDATE t SET b = 'u' WHERE a = 2"))
+        r = execute(db, parse("SELECT a, b FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[1, "x"], [2, "u"], [3, "z"]])
+
+    def test_update_all_rows_without_where(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(3)"))
+        execute(db, parse("UPDATE t SET a = a * 10"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[10], [20], [30]])
+
+    def test_update_expression_on_original_row(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1, 2)"))
+        execute(db, parse("UPDATE t SET a = b, b = a"))  # 交换 → 都基于原行
+        r = execute(db, parse("SELECT a, b FROM t"))
+        self.assertEqual(r.rows, [[2, 1]])
+
+    def test_update_affinity_conversion(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1)"))
+        execute(db, parse("UPDATE t SET a = '2.9'"))  # INTEGER 亲和:文本 '2.9' → REAL 2.9
+        r = execute(db, parse("SELECT a, typeof(a) FROM t"))
+        self.assertEqual(r.rows, [[2.9, "real"]])
+        execute(db, parse("UPDATE t SET a = '2'"))  # 整数字面量文本 → INTEGER 2
+        r = execute(db, parse("SELECT a, typeof(a) FROM t"))
+        self.assertEqual(r.rows, [[2, "integer"]])
+        execute(db, parse("UPDATE t SET a = 2.0"))  # REAL 2.0 无损 → INTEGER 2
+        r = execute(db, parse("SELECT a, typeof(a) FROM t"))
+        self.assertEqual(r.rows, [[2, "integer"]])
+
+    def test_update_unknown_column_error(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        with self.assertRaises(SqlError):
+            execute(db, parse("UPDATE t SET z = 1"))
+
+    def test_delete_where(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(3),(4)"))
+        execute(db, parse("DELETE FROM t WHERE a > 2"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[1], [2]])
+
+    def test_delete_all_without_where(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2)"))
+        execute(db, parse("DELETE FROM t"))
+        r = execute(db, parse("SELECT a FROM t"))
+        self.assertEqual(r.rows, [])
+
+    def test_delete_no_match(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1)"))
+        execute(db, parse("DELETE FROM t WHERE a = 99"))
+        r = execute(db, parse("SELECT a FROM t"))
+        self.assertEqual(r.rows, [[1]])
+
+    def test_delete_unknown_table_error(self):
+        db = Database()
+        with self.assertRaises(SqlError):
+            execute(db, parse("DELETE FROM nosuch"))
+
+
+class SelectAdvancedTest(unittest.TestCase):
+    def test_distinct_single_column(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1,1),(2,2),(1,1),(3,3),(2,2)"))
+        r = execute(db, parse("SELECT DISTINCT a FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[1], [2], [3]])
+
+    def test_distinct_multi_column(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER, b INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1,1),(1,2),(1,1),(2,2)"))
+        r = execute(db, parse("SELECT DISTINCT a, b FROM t ORDER BY a, b"))
+        self.assertEqual(r.rows, [[1, 1], [1, 2], [2, 2]])
+
+    def test_distinct_null_collapses(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(NULL),(1),(NULL),(2)"))
+        r = execute(db, parse("SELECT DISTINCT a FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[None], [1], [2]])  # SQLite:NULL 在 ASC 排最前
+
+    def test_distinct_int_float_equal(self):
+        # SQLite:1 与 1.0 在 DISTINCT 下视为同一值
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(1.0),(2)"))
+        r = execute(db, parse("SELECT DISTINCT a FROM t ORDER BY a"))
+        self.assertEqual(r.rows, [[1], [2]])
+
+    def test_distinct_with_where_and_limit(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(1),(3),(2),(4)"))
+        r = execute(db, parse("SELECT DISTINCT a FROM t WHERE a >= 2 ORDER BY a LIMIT 2"))
+        self.assertEqual(r.rows, [[2], [3]])
+
+    def test_limit_offset(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(3),(4),(5)"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a LIMIT 2 OFFSET 1"))
+        self.assertEqual(r.rows, [[2], [3]])
+
+    def test_limit_comma_form(self):
+        # LIMIT n, m = OFFSET n, LIMIT m
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(3),(4),(5)"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a LIMIT 2, 2"))
+        self.assertEqual(r.rows, [[3], [4]])
+
+    def test_limit_negative_unlimited(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(3)"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a LIMIT -1 OFFSET 1"))
+        self.assertEqual(r.rows, [[2], [3]])
+
+    def test_limit_expression(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(3),(4),(5)"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a LIMIT 2+1"))
+        self.assertEqual(r.rows, [[1], [2], [3]])
+
+    def test_limit_zero(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a INTEGER)"))
+        execute(db, parse("INSERT INTO t VALUES(1),(2),(3)"))
+        r = execute(db, parse("SELECT a FROM t ORDER BY a LIMIT 0"))
+        self.assertEqual(r.rows, [])
+
+    def test_offset_without_limit_error(self):
+        with self.assertRaises(SqlParseError):
+            parse("SELECT 1 OFFSET 2")
+
+    def test_distinct_order_by_collation(self):
+        db = Database()
+        execute(db, parse("CREATE TABLE t(a TEXT COLLATE NOCASE)"))
+        execute(db, parse("INSERT INTO t VALUES('a'),('A'),('b'),('B')"))
+        r = execute(db, parse("SELECT DISTINCT a FROM t ORDER BY a"))
+        # DISTINCT 按 NOCASE 去重:'a','A' 相同,'b','B' 相同 → 2 行(保留首见 'a','b')
+        self.assertEqual(r.rows, [["a"], ["b"]])
+
+
 if __name__ == "__main__":
     unittest.main()

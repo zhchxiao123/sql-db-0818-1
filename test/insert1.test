@@ -1,0 +1,143 @@
+statement ok
+CREATE TABLE t1(a INTEGER, b TEXT, c REAL)
+
+statement ok
+INSERT INTO t1 VALUES(1, 'one', 1.5)
+
+statement ok
+INSERT INTO t1 VALUES(2, 'two', 2.5), (3, 'three', 3.5)
+
+statement ok
+INSERT INTO t1 DEFAULT VALUES
+
+statement ok
+INSERT INTO t1(a) VALUES(4)
+
+statement ok
+INSERT INTO t1(b, a) VALUES('four', 5)
+
+statement ok
+INSERT INTO t1 VALUES(NULL, NULL, NULL)
+
+statement ok
+INSERT INTO t1 VALUES('6', 6, '7')
+
+query ITR
+SELECT a, b, c FROM t1
+----
+1
+one
+1.500
+2
+two
+2.500
+3
+three
+3.500
+NULL
+NULL
+NULL
+4
+NULL
+NULL
+5
+four
+NULL
+NULL
+NULL
+NULL
+6
+6
+7.000
+
+query TTT
+SELECT typeof(a), typeof(b), typeof(c) FROM t1 ORDER BY a
+----
+null
+null
+null
+null
+null
+null
+integer
+text
+real
+integer
+text
+real
+integer
+text
+real
+integer
+null
+null
+integer
+text
+null
+integer
+text
+real
+
+statement ok
+CREATE TABLE t2(a INTEGER DEFAULT 42, b TEXT DEFAULT 'x', c REAL DEFAULT 1.5, d)
+
+statement ok
+INSERT INTO t2 DEFAULT VALUES
+
+statement ok
+INSERT INTO t2(a) VALUES(7)
+
+statement ok
+INSERT INTO t2(a, b) VALUES(8, NULL)
+
+statement ok
+INSERT INTO t2(a, c, d) VALUES(9, 2.5, 'z')
+
+query ITRT
+SELECT a, b, c, d FROM t2
+----
+42
+x
+1.500
+NULL
+7
+x
+1.500
+NULL
+8
+NULL
+1.500
+NULL
+9
+x
+2.500
+z
+
+statement ok
+CREATE TABLE t3(a INTEGER DEFAULT '42', b TEXT DEFAULT 7, c REAL DEFAULT '2.5')
+
+statement ok
+INSERT INTO t3 DEFAULT VALUES
+
+query TTT
+SELECT typeof(a), typeof(b), typeof(c) FROM t3
+----
+integer
+text
+real
+
+statement error INSERT has 1 values
+INSERT INTO t1 VALUES(1)
+
+statement error INSERT has 4 values
+INSERT INTO t1 VALUES(1,2,3,4)
+
+statement error no such table
+INSERT INTO nosuch VALUES(1)
+
+statement error no such column
+INSERT INTO t1(z) VALUES(1)
+
+statement error duplicate column
+INSERT INTO t1(a, a) VALUES(1, 2)
+

@@ -558,6 +558,7 @@ class Column:
     type_name: str  # 原始类型名
     affinity: str = AFF_NONE  # 由类型名推导
     collation: str = COLL_BINARY  # 列级 COLLATE,默认 BINARY
+    default: Optional[Value] = None  # DEFAULT 字面量(未指定 → None)
 
 
 @dataclass
@@ -603,7 +604,13 @@ class Database:
                 raise SqlError(
                     f"INSERT has {len(row)} values but {len(indexes)} columns were supplied"
                 )
-            coerced = [None] * len(table.columns)  # 未指定的列填 NULL
+            coerced = [None] * len(table.columns)  # 未指定的列填 DEFAULT/NULL
             for i, idx in enumerate(indexes):
                 coerced[idx] = apply_affinity(row[i], table.columns[idx].affinity)
+            # 未指定列:有 DEFAULT 则用 DEFAULT(按列亲和转换),否则 NULL
+            for idx in range(len(table.columns)):
+                if idx not in indexes:
+                    col = table.columns[idx]
+                    if col.default is not None:
+                        coerced[idx] = apply_affinity(col.default, col.affinity)
             table.rows.append(coerced)

@@ -8,7 +8,7 @@
 > error 模式按本引擎真实报错文本书写,运行器以 re.search 匹配)。
 > 生成器:`tools/gen_fixtures.py`(`python3 tools/gen_fixtures.py` 可复现)。
 
-## 逐文件清单(子需求 0 基线 + 子需求 1 验收)
+## 逐文件清单(子需求 0 基线 + 子需求 1 + 子需求 2 验收)
 
 ### 子需求 0 基线(7 文件,100 条)
 
@@ -48,6 +48,22 @@
 | `collate4.test` | `collate4.test` 场景 | 表达式级 COLLATE;IN/BETWEEN/|| 与 COLLATE 组合 | [a10] collation |
 | `collate5.test` | `collate5.test` 场景 | 混合 collation 多列排序 | [a10] collation |
 
+### 子需求 2 验收(7 文件,157 条)
+
+覆盖本子需求验收能力点:DML(INSERT 多行/缺省值/NULL、UPDATE 含表达式
+赋值与 WHERE、DELETE 含 WHERE)与 SELECT 进阶(WHERE 谓词、ORDER BY 含
+collation、LIMIT/OFFSET、DISTINCT)。
+
+| 夹具文件 | 官方对应 | 内容 | 覆盖能力(验收 id) |
+|---|---|---|---|
+| `insert1.test` | `insert1-5.test` 场景重构 | 多行、列清单、省略列→NULL、DEFAULT VALUES、列级 DEFAULT(含亲和转换)、显式 NULL、INSERT 错误 | INSERT(多行、缺省值、NULL) |
+| `update1.test` | `update1-3.test` 场景重构 | 无 WHERE 全表、WHERE 过滤、表达式赋值、多列赋值、交换赋值(基于原行)、无匹配、亲和转换、collation 参与 WHERE、UPDATE 错误 | UPDATE(含表达式赋值与 WHERE) |
+| `delete1.test` | `delete1-4.test` 场景重构 | WHERE 过滤、无匹配、无 WHERE 全删、DELETE 错误 | DELETE(含 WHERE) |
+| `select2.test` | `select2.test` t1 数据逐条对应(官方 30 行含 NULL) | WHERE 谓词(IS NULL/IS NOT NULL/比较/AND/OR)、ORDER BY + LIMIT/OFFSET(含逗号形式、LIMIT -1、LIMIT 0、OFFSET 表达式) | SELECT 进阶(WHERE/LIMIT/OFFSET) |
+| `select3.test` | `select3.test` 场景重构 | DISTINCT 单列/多列/表达式;NULL 去重;int/float 视为相同;collation 参与 DISTINCT;DISTINCT+WHERE+LIMIT/OFFSET | SELECT 进阶(DISTINCT) |
+| `select4.test` | `select4.test` 场景重构(a1..a5 多列表) | ORDER BY 多列/方向;LIMIT/OFFSET 组合(含逗号形式、表达式、LIMIT -1、LIMIT 0);文本 collation 排序(NOCASE/BINARY/DESC) | SELECT 进阶(ORDER BY collation + LIMIT/OFFSET) |
+| `select5.test` | `select5.test` 官方全连接 → 重构为单表组合 | DISTINCT+WHERE+ORDER BY+LIMIT/OFFSET 组合;LIKE/BETWEEN 谓词;常量投影 + LIMIT/OFFSET/DISTINCT | SELECT 进阶组合 |
+
 ## 与官方文件的差异口径(重构说明)
 
 - 官方 expr/func/like/in/collate 系列使用 select1 的 t1 表(1 CREATE + 30
@@ -60,6 +76,13 @@
   该类记录的功能是验证"该语句确实失败",模式匹配只做防呆。
 - 官方 func 系列含聚合用例(count/sum/avg 等),聚合属后续子需求范围,
   本夹具不构造聚合查询;min/max 仅使用标量多参形式。
+- 官方 select5.test 全部为多表连接查询,连接属后续子需求范围;本夹具的
+  `select5.test` 按官方 select5 的查询形态(组合 WHERE/ORDER BY/LIMIT/
+  DISTINCT)重构为单表用例,期望值仍由 sqlite3 3.46.1 产出。
+- 官方 insert/update/delete 系列存在 `UPDATE ... LIMIT`、`INSERT OR
+  REPLACE` 等本子需求范围外形态(对应官方编译选项/约束特性),本夹具不
+  构造;DML 错误记录(值数不匹配/未知列/未知表)模式按本引擎真实报错
+  文本书写。
 
 ## 期望值产出方式
 

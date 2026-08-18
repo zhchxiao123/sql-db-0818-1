@@ -1,0 +1,153 @@
+statement ok
+CREATE TABLE t1(a1 INTEGER, a2 INTEGER, a3 INTEGER, a4 INTEGER, a5 INTEGER)
+
+statement ok
+INSERT INTO t1 VALUES(5,4,3,2,1),(1,2,3,4,5),(3,3,3,3,3),(2,4,1,5,3),(4,1,5,2,3)
+
+query I
+SELECT a1 FROM t1 ORDER BY a1
+----
+1
+2
+3
+4
+5
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 DESC
+----
+5
+4
+3
+2
+1
+
+query II
+SELECT a1, a2 FROM t1 ORDER BY a1, a2
+----
+1
+2
+2
+4
+3
+3
+4
+1
+5
+4
+
+query II
+SELECT a1, a2 FROM t1 ORDER BY a2, a1
+----
+4
+1
+1
+2
+3
+3
+2
+4
+5
+4
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 LIMIT 2
+----
+1
+2
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 LIMIT 2 OFFSET 2
+----
+3
+4
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 DESC LIMIT 3
+----
+5
+4
+3
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 LIMIT -1 OFFSET 1
+----
+2
+3
+4
+5
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 LIMIT 0
+----
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 LIMIT 2+2
+----
+1
+2
+3
+4
+
+query I
+SELECT a1 FROM t1 ORDER BY a1 LIMIT 2, 3
+----
+3
+4
+5
+
+statement ok
+CREATE TABLE t2(a TEXT COLLATE NOCASE, b TEXT COLLATE BINARY)
+
+statement ok
+INSERT INTO t2 VALUES('apple','Z'),('Apple','y'),('banana','X'),('BANANA','w'),('cherry','v')
+
+query T
+SELECT a FROM t2 ORDER BY a
+----
+apple
+Apple
+banana
+BANANA
+cherry
+
+query T
+SELECT a FROM t2 ORDER BY a COLLATE BINARY
+----
+Apple
+BANANA
+apple
+banana
+cherry
+
+query T
+SELECT a FROM t2 ORDER BY a DESC
+----
+cherry
+banana
+BANANA
+apple
+Apple
+
+query T
+SELECT b FROM t2 ORDER BY b
+----
+X
+Z
+v
+w
+y
+
+query T
+SELECT a FROM t2 ORDER BY a LIMIT 2 OFFSET 1
+----
+Apple
+banana
+
+query T
+SELECT DISTINCT a FROM t2 ORDER BY a
+----
+apple
+banana
+cherry
+

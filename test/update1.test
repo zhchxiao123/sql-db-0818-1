@@ -1,0 +1,130 @@
+statement ok
+CREATE TABLE t1(a INTEGER, b TEXT)
+
+statement ok
+INSERT INTO t1 VALUES(1,'one'),(2,'two'),(3,'three'),(4,'four'),(5,'five')
+
+statement ok
+UPDATE t1 SET b = b || '!'
+
+query IT
+SELECT a, b FROM t1 ORDER BY a
+----
+1
+one!
+2
+two!
+3
+three!
+4
+four!
+5
+five!
+
+statement ok
+UPDATE t1 SET a = a * 10 WHERE a <= 3
+
+query IT
+SELECT a, b FROM t1 ORDER BY a
+----
+4
+four!
+5
+five!
+10
+one!
+20
+two!
+30
+three!
+
+statement ok
+UPDATE t1 SET a = a + 1, b = 'x' WHERE b = 'two!'
+
+query IT
+SELECT a, b FROM t1 ORDER BY a
+----
+4
+four!
+5
+five!
+10
+one!
+21
+x
+30
+three!
+
+statement ok
+UPDATE t1 SET a = b, b = a WHERE a = 40
+
+query IT
+SELECT a, b FROM t1 ORDER BY a
+----
+4
+four!
+5
+five!
+10
+one!
+21
+x
+30
+three!
+
+statement ok
+UPDATE t1 SET b = 'z' WHERE a = 999
+
+query IT
+SELECT a, b FROM t1 ORDER BY a
+----
+4
+four!
+5
+five!
+10
+one!
+21
+x
+30
+three!
+
+statement ok
+CREATE TABLE t2(a INTEGER)
+
+statement ok
+INSERT INTO t2 VALUES(1),(2)
+
+statement ok
+UPDATE t2 SET a = '3.9'
+
+query RT
+SELECT a, typeof(a) FROM t2 ORDER BY a
+----
+3.900
+real
+3.900
+real
+
+statement ok
+CREATE TABLE t3(a TEXT COLLATE NOCASE)
+
+statement ok
+INSERT INTO t3 VALUES('abc'),('ABC'),('xyz')
+
+statement ok
+UPDATE t3 SET a = 'matched' WHERE a = 'abc'
+
+query T
+SELECT a FROM t3 ORDER BY a
+----
+matched
+matched
+xyz
+
+statement error no such column
+UPDATE t1 SET z = 1
+
+statement error no such table
+UPDATE nosuch SET a = 1
+
