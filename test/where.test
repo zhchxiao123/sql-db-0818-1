@@ -1,0 +1,104 @@
+# where.test — 简单 WHERE(比较)
+#
+# 覆盖验收 a6:简单 WHERE(比较 = != <> < <= > >=,AND/OR/NOT)。
+# 期望值由 sqlite3 3.46.1 实际执行产出。
+
+statement ok
+CREATE TABLE t(a INTEGER, b TEXT)
+
+statement ok
+INSERT INTO t VALUES(1,'a'),(2,'b'),(3,'c'),(4,'d'),(5,'e'),(6,'f'),(7,'g'),(8,'h'),(9,'i'),(10,'j')
+
+query I rowsort
+SELECT a FROM t WHERE a=5
+----
+5
+
+query I rowsort
+SELECT a FROM t WHERE a>7
+----
+8
+9
+10
+
+query I rowsort
+SELECT a FROM t WHERE a<3
+----
+1
+2
+
+query I rowsort
+SELECT a FROM t WHERE a>=8
+----
+8
+9
+10
+
+query I rowsort
+SELECT a FROM t WHERE a<=2
+----
+1
+2
+
+query I rowsort
+SELECT a FROM t WHERE a!=5
+----
+1
+2
+3
+4
+6
+7
+8
+9
+10
+
+query I rowsort
+SELECT a FROM t WHERE a<>5
+----
+1
+2
+3
+4
+6
+7
+8
+9
+10
+
+query I rowsort
+SELECT a FROM t WHERE a>2 AND a<6
+----
+3
+4
+5
+
+query I rowsort
+SELECT a FROM t WHERE a=1 OR a=10
+----
+1
+10
+
+query I rowsort
+SELECT a FROM t WHERE NOT a=5
+----
+1
+2
+3
+4
+6
+7
+8
+9
+10
+
+query I rowsort
+SELECT a FROM t WHERE b='d'
+----
+4
+
+query I rowsort
+SELECT a FROM t WHERE a>4 AND b<'f'
+----
+5
+

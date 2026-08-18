@@ -1,0 +1,9 @@
+[project]
+name = "sql-db-0818-1"
+version = "0.1.0"
+description = "sqlite 兼容的最小 SQL 引擎 + sqllogictest 运行器"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.setuptools]
+packages = ["sql_db_0818_1"]

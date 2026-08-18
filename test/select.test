@@ -1,0 +1,52 @@
+# select.test — SELECT 常量与列引用
+#
+# 覆盖验收 a6:SELECT 常量(无 FROM 与混排)与列引用。
+# 期望值由 sqlite3 3.46.1 实际执行产出。
+
+statement ok
+CREATE TABLE t(a INTEGER, b TEXT, c REAL)
+
+statement ok
+INSERT INTO t VALUES(1, 'one', 1.5), (2, 'two', 2.5), (3, 'three', 3.5)
+
+query I rowsort
+SELECT 42
+----
+42
+
+query T rowsort
+SELECT 'hello'
+----
+hello
+
+query I rowsort
+SELECT a FROM t
+----
+1
+2
+3
+
+query T rowsort
+SELECT b FROM t
+----
+one
+three
+two
+
+query R rowsort
+SELECT c FROM t
+----
+1.500
+2.500
+3.500
+
+query IT rowsort
+SELECT a, b FROM t
+----
+1
+one
+2
+two
+3
+three
+
